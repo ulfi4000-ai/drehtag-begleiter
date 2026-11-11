@@ -1,6 +1,6 @@
 // Service Worker: hält eine Kopie der App-Dateien im Handy vor.
 // Mit Netz kommt immer die neueste Fassung, ohne Netz die gespeicherte.
-const CACHE = 'drehtag-v9';
+const CACHE = 'drehtag-v10';
 const DATEIEN = [
   './', 'index.html', 'css/app.css',
   'js/app.js', 'js/modell.js', 'js/db.js', 'js/zustand.js', 'js/ansichten.js', 'js/aktionen.js',

@@ -127,6 +127,35 @@ function flachZuBuendeln(d) {
   }));
 }
 
+// ---------- Sicherheit beim Einlesen ----------
+// Eine Datei kann auch von jemand anderem kommen. Bevor etwas gespeichert wird, gilt:
+// - Kennungen (id, drehtagId, videoId …) bestehen nur aus Buchstaben, Ziffern, - und _.
+//   Sie landen ungeschützt in der Oberfläche, also darf darin kein HTML stehen.
+// - Eingebettete Fotos und Aufnahmen sind echte Bild- bzw. Tondaten (data:image/…, data:audio/…).
+const ID_MUSTER = /^[A-Za-z0-9_-]{1,64}$/;
+const DATEN_MUSTER = /^data:(image|audio|video)\/[\w.+-]+(;[\w=.+-]+)*;base64,/;
+
+function dateiPruefen(daten) {
+  const kaputt = () => { throw new Error('Die Datei enthält ungültige Einträge und wird nicht eingelesen.'); };
+  (function pruefe(wert, schluessel) {
+    if (Array.isArray(wert)) { wert.forEach((x) => pruefe(x)); return; }
+    if (wert && typeof wert === 'object') { for (const [k, v] of Object.entries(wert)) pruefe(v, k); return; }
+    if (schluessel === 'id' || /Id$/.test(schluessel || '')) {
+      if (wert == null || wert === '') { if (schluessel === 'id') kaputt(); return; }
+      if (typeof wert !== 'string' || !ID_MUSTER.test(wert)) kaputt();
+    }
+    if ((schluessel === 'data' || schluessel === 'originalData') && !(typeof wert === 'string' && DATEN_MUSTER.test(wert))) kaputt();
+  })(daten);
+}
+
+// Lösch-Vermerke dürfen nur Einträge desselben Drehtags treffen, nie andere Drehtage oder Einstellungen
+const LOESCHBAR = ['locations', 'videos', 'shots', 'medien'];
+async function vermerkAnwenden(t, drehtagId) {
+  if (!LOESCHBAR.includes(t.store)) return;
+  const r = await db.get(t.store, t.id);
+  if (r && r.drehtagId === drehtagId) await db.del(t.store, t.id);
+}
+
 // Ein Bündel mit dem Stand auf diesem Gerät zusammenführen: pro Eintrag gewinnt die jüngere Fassung
 async function einspielen(fremd) {
   const leer = { drehtag: null, locations: [], videos: [], shots: [], medien: [], geloescht: [] };
@@ -136,8 +165,8 @@ async function einspielen(fremd) {
   for (const name of ['locations', 'videos', 'shots']) for (const r of m[name]) await db.putRoh(name, r);
   for (const r of m.medien) await db.putRoh('medien', await medienAusDatei(r));
   for (const t of m.geloescht) {
-    if (t.store) await db.del(t.store, t.id);
-    await db.putRoh('geloescht', { ...t, drehtagId: t.drehtagId || m.drehtag.id });
+    await vermerkAnwenden(t, m.drehtag.id);
+    await db.putRoh('geloescht', { ...t, drehtagId: m.drehtag.id });
   }
 }
 
@@ -146,6 +175,7 @@ export async function importDatei(file) {
   let daten;
   try { daten = JSON.parse(await file.text()); } catch { daten = null; }
   if (daten?.app !== 'drehtag-begleiter') throw new Error('Das ist keine Datei vom Drehtag-Begleiter.');
+  dateiPruefen(daten);
   const buendel = daten.art === 'drehtag' ? [daten] : flachZuBuendeln(daten);
   for (const b of buendel) await einspielen(b);
   return buendel;
