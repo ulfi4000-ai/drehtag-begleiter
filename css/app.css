@@ -514,3 +514,7 @@ button.fab { border: 0; font: inherit; font-weight: 700; font-size: 17px; cursor
 .audio-notiz summary { cursor: pointer; font-weight: 600; }
 .transkript { margin-top: 6px; white-space: pre-wrap; line-height: 1.45; }
 .audio-notiz .mini { justify-self: start; }
+
+/* Sonnenstand im Plan */
+.sonne-hinweis { margin: 6px 0 0; font-size: 14px; color: var(--mute); }
+.sonne-hinweis.warn { color: var(--rot); font-weight: 600; }

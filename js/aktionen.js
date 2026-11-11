@@ -534,6 +534,17 @@ const aktionen = {
     z.fadenShot = '';
     render();
   },
+  // Im Drehtag-Formular: Koordinaten vom GPS des Handys übernehmen (fragt einmal um Erlaubnis)
+  'standort-hier'() {
+    const feld = app().querySelector('input[name="koordinaten"]');
+    if (!feld || !navigator.geolocation) { toast('Standort ist hier nicht verfügbar'); return; }
+    toast('Standort wird ermittelt …');
+    navigator.geolocation.getCurrentPosition(
+      (p) => { feld.value = `${p.coords.latitude.toFixed(5)}, ${p.coords.longitude.toFixed(5)}`; toast('Standort übernommen – noch speichern'); },
+      () => toast('Kein Standort – Freigabe oder GPS prüfen'),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+    );
+  },
   async 'faden-klappe'(id) {
     const shot = await db.get('shots', id);
     const [video, tag] = await Promise.all([shot.videoId ? db.get('videos', shot.videoId) : null, db.get('drehtage', shot.drehtagId)]);

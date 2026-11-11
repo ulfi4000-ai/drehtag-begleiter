@@ -11,6 +11,7 @@ import * as db from './db.js';
 import { z, urlsWechseln } from './zustand.js';
 import * as A from './ansichten.js';
 import { init, wachsen, sucheFuellen } from './aktionen.js';
+import { initFernbedienung } from './fernbedienung.js';
 
 const app = document.getElementById('app');
 let letzteRoute = null;
@@ -79,6 +80,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 init(render);
+initFernbedienung();
 window.addEventListener('hashchange', render);
 render();
 

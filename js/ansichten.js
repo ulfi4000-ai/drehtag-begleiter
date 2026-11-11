@@ -6,8 +6,10 @@ import {
   TYPEN, STATUS, FRAGEN_SETS, typVon, statusVon, gruppieren, shotName,
   videoStand, videoStandText, zeitplanMitZeiten, zeitplanMinuten,
   fadenStand, fadenZeit, SCHAETZUNG, SETTING_FELDER, settingsVon, settingVon, settingKurz,
+  sonnenText, sonneVon, sonnenHinweis, uhrAusMin,
 } from './modell.js';
 import { z, bildUrl, nachPos, anzahl, statsText, folienText, istLang, platzhalter, woerter } from './zustand.js';
+import { fernbedienungKarte } from './fernbedienung.js';
 
 // ---------- Bausteine ----------
 
@@ -161,6 +163,11 @@ export function viewTagForm(tag, art) {
           <label>Drehbeginn <input type="time" name="uhrzeit" value="${v('uhrzeit')}"></label>
         </div>`}
         <label>Ort / Adresse <input name="ort" value="${v('ort')}" autocomplete="off"></label>
+        <label>Koordinaten für den Sonnenstand
+          <input name="koordinaten" value="${v('koordinaten')}" placeholder="z. B. 51.0504, 6.2214 oder Maps-Link" autocomplete="off" inputmode="text">
+        </label>
+        <p class="mute" style="margin-top:-6px">In Google Maps lange auf den Ort drücken, die Zahlen oben kopieren und hier einfügen. Vor Ort geht auch:</p>
+        <button class="btn" type="button" data-action="standort-hier">📍 Aktuellen Standort nehmen</button>
         <label>Ansprechpartner <input name="ansprechpartner" value="${v('ansprechpartner')}" autocomplete="off"></label>
         <label>Telefon <input type="tel" name="telefon" value="${v('telefon')}" autocomplete="off"></label>
         ${tag?.vorlage ? '' : `<label>Status <select name="status">${STATUS.map((s) => `<option value="${s.id}" ${s.id === statusVon(tag?.status).id ? 'selected' : ''}>${s.label}</option>`).join('')}</select></label>`}
@@ -182,6 +189,7 @@ function infoKarte(tag) {
       ${tag.vorlage ? '<p class="hinweis">Das ist eine Vorlage. Auf der Startseite wird daraus ein neuer Drehtag.</p>' : ''}
       ${wann ? `<div class="info-row"><span>Wann</span><b>${esc(wann)}</b></div>` : ''}
       ${tag.ort ? `<div class="info-row"><span>Ort</span><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(tag.ort)}" target="_blank" rel="noopener">${esc(tag.ort)}</a></div>` : ''}
+      ${sonnenText(tag) ? `<div class="info-row"><span>Sonne</span><div>${esc(sonnenText(tag))}</div></div>` : ''}
       ${tag.ansprechpartner || tag.telefon ? `<div class="info-row"><span>Kontakt</span><div>${esc(tag.ansprechpartner || '')} ${tag.telefon ? `<a href="tel:${esc(tag.telefon.replace(/[^\d+]/g, ''))}">${esc(tag.telefon)}</a>` : ''}</div></div>` : ''}
       ${tag.notizen ? `<p class="notiz">${esc(tag.notizen)}</p>` : ''}
       ${leer ? '<p class="mute">Noch keine Angaben. Oben auf „Bearbeiten“ tippen.</p>' : ''}
@@ -311,6 +319,7 @@ function shotZeile(s, i, gruppe, { locations = [], videos = [], medien = [], set
           ${s.text ? `<span class="shot-text ${!s.titel && !lang ? 'solo' : ''} ${lang && !offen ? 'gekuerzt' : ''}">${esc(s.text)}</span>` : ''}
           ${!s.titel && !s.text ? '<span class="shot-titel">Ohne Titel</span>' : ''}
           ${s.take ? `<span class="shot-take">Take: ${esc(s.take)}</span>` : ''}
+          ${s.clips?.length ? `<span class="shot-take">Clips: ${esc(s.clips.join(', '))}</span>` : ''}
           ${meta ? `<span class="shot-meta">${esc(meta)}</span>` : ''}
         </a>
         ${sortierbar && z.sortieren
@@ -438,6 +447,13 @@ function tabPlan(tag, locations, absender, shots = []) {
   const min = zeitplanMinuten(plan.bloecke);
   const posten = tag.packliste?.posten || [];
   const gepackt = posten.filter((p) => p.ok).length;
+  const sonne = sonneVon(tag);
+  // Nur bei Außen-Locations: liegt der Block im Hellen, in der Goldenen Stunde oder schon im Dunkeln?
+  const sonnenZeile = (b) => {
+    if (!locations.find((l) => l.id === b.locationId)?.aussen) return '';
+    const h = sonnenHinweis(sonne, b.von, b.bis);
+    return h ? `<p class="sonne-hinweis ${/dunkel|mittendrin/.test(h) ? 'warn' : ''}">☀ Außen: ${esc(h)}</p>` : '';
+  };
 
   const block = (b, i) => `
     <div class="block" data-save="block" data-tag="${tag.id}" data-id="${b.id}">
@@ -453,6 +469,7 @@ function tabPlan(tag, locations, absender, shots = []) {
         <button class="move" data-action="move-block" data-tag="${tag.id}" data-id="${b.id}" data-dir="1" ${i === bloecke.length - 1 ? 'disabled' : ''} aria-label="Nach unten">▼</button>
       </div>
       <input name="hinweis" value="${esc(b.hinweis)}" placeholder="Hinweis für den Kunden (optional)" aria-label="Hinweis">
+      ${sonnenZeile(b)}
     </div>`;
 
   const postenZeile = (p) => z.bearbeiten
@@ -487,6 +504,8 @@ function tabPlan(tag, locations, absender, shots = []) {
         <label data-save="tagfeld" data-id="${tag.id}">Drehbeginn <input type="time" name="uhrzeit" value="${esc(tag.uhrzeit || '')}" data-rerender></label>
         <div class="field">Ende <span class="plan-ende">${ende ? ende + ' Uhr' : '–'}</span></div>
       </div>
+      ${sonne && sonne.untergang != null ? `<p class="sonne-hinweis">☀ Goldene Stunde ${uhrAusMin(sonne.goldAbend[0])}–${uhrAusMin(sonne.goldAbend[1])} · Sonnenuntergang ${uhrAusMin(sonne.untergang)}</p>`
+        : tag.datum && !tag.koordinaten ? '<p class="mute">Für Sonnenzeiten Koordinaten unter „Bearbeiten“ eintragen.</p>' : ''}
       ${bloecke.length ? bloecke.map(block).join('') : '<p class="mute">Noch kein Ablauf. Tipp: „Aus Locations“ legt für jede Location einen Block an.</p>'}
       <div class="btn-row" style="margin-top:0">
         <button class="btn" data-action="add-block" data-id="${tag.id}">+ Block</button>
@@ -620,6 +639,7 @@ export async function viewShot(id) {
         </div>
         <label>Setting <select name="settingId">${auswahl(settingsVon(tag), shot.settingId, 'Ohne Setting', '+ Neues Setting …')}</select></label>
         <label>Take <input name="take" value="${esc(shot.take)}" placeholder="z. B. Clip 0042, Take 3 – der beste" autocomplete="off"></label>
+        ${shot.clips?.length ? `<p class="mute">Clips (von Claude zugeordnet): ${esc(shot.clips.join(', '))}</p>` : ''}
         <label>Notiz <textarea name="notiz" class="auto" rows="2" placeholder="Bildidee, Licht, Ablauf …">${esc(shot.notiz)}</textarea></label>
       </section>
       <section class="card">
@@ -735,6 +755,7 @@ export async function viewOrt(id) {
       <section class="card form" data-save="ort" data-id="${id}">
         <label>Name <input name="name" value="${esc(ort.name)}" autocomplete="off"></label>
         <label>Notizen <textarea name="notiz" class="auto" rows="3" placeholder="Licht, Ton, Platz, Strom, Besonderheiten …">${esc(ort.notiz)}</textarea></label>
+        <label class="check-row"><input type="checkbox" class="chk" name="aussen" ${ort.aussen ? 'checked' : ''}> Außen (Sonnenstand im Zeitplan beachten)</label>
       </section>
       <section class="card">
         <h2>Fotos und Skizzen</h2>
@@ -879,11 +900,21 @@ export async function viewFaden(id) {
 
   // Zeile darunter: wo wir stehen und ob wir in der Zeit liegen
   const zeit = st ? fadenZeit(b, st) : null;
+  // Außen-Station am Drehtag selbst: Countdown bis Sonnenuntergang (ab 2 Stunden vorher)
+  const sonnenUhr = (station) => {
+    const s = sonneVon(b.drehtag);
+    if (!s || s.untergang == null || b.drehtag.datum !== heute()) return '';
+    if (!b.locations.find((l) => l.id === station.locationId)?.aussen) return '';
+    const jetzt = new Date();
+    const rest = Math.round(s.untergang - (jetzt.getHours() * 60 + jetzt.getMinutes()));
+    if (rest > 120) return '';
+    return rest > 0 ? ` · <b class="${rest <= 30 ? 'spaet' : ''}">☀ Untergang in ${rest} Min.</b>` : ' · <b class="spaet">☀ Sonne ist unter</b>';
+  };
   const zeitText = !zeit ? '' : zeit.art === 'spaet' ? `<b class="spaet">${zeit.min} Min. hinter Plan</b>`
     : zeit.art === 'frueh' ? `<b class="frueh">${zeit.min} Min. vor Plan</b>` : `<b>noch ${zeit.min} Min.</b>`;
   const status = nachholModus
     ? `<b>Nachholen</b> · ${anzahl(nachholen.length, 'Shot', 'Shots')} zurückgestellt`
-    : st ? `<b>${esc(st.titel)}</b>${st.von ? ` · ${st.von}–${st.bis}` : st.dauer ? ` · ${st.dauer} Min.` : ''}${zeitText ? ' · ' + zeitText : ''}` : '';
+    : st ? `<b>${esc(st.titel)}</b>${st.von ? ` · ${st.von}–${st.bis}` : st.dauer ? ` · ${st.dauer} Min.` : ''}${zeitText ? ' · ' + zeitText : ''}${sonnenUhr(st)}` : '';
 
   let inhalt;
   if (!st && !nachholModus) {
@@ -979,6 +1010,7 @@ export async function viewSicherung() {
         <p class="mute" style="margin-bottom:12px">Backup oder Drehtag-Datei (zum Beispiel zurück von Claude). Beide Stände werden zusammengeführt: Pro Eintrag gilt die jüngere Fassung, nichts Neueres wird überschrieben.</p>
         <label class="btn big">Datei auswählen<input type="file" hidden data-change="import-datei"></label>
       </section>
+      ${fernbedienungKarte()}
       <p class="mute" style="text-align:center">${speicher}</p>
     </main>`;
 }

@@ -328,6 +328,96 @@ export function ablaufVorschlag(b) {
   return bloecke;
 }
 
+// ---------- Sonnenstand ----------
+// Rechnet ohne Internet aus Koordinaten und Datum: Aufgang, Untergang, Goldene und Blaue Stunde.
+// Genauigkeit etwa eine Minute (vereinfachte Sonnenbahn, ohne Berge und Häuser am Horizont).
+// Goldene Stunde: Sonne zwischen 6° über und 4° unter dem Horizont. Blaue Stunde: 4° bis 6° darunter.
+
+// Akzeptiert "51.05, 6.22", "51,05 6,22" und Google-Maps-Links (…@51.05,6.22… oder …q=51.05,6.22…)
+export function koordinatenAus(text) {
+  const t = String(text || '');
+  const m = /@(-?\d+\.\d+),(-?\d+\.\d+)/.exec(t) || /[?&](?:q|query|ll)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/.exec(t)
+    || /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/.exec(t) || /^\s*(-?\d+(?:[.,]\d+)?)\s*[,; ]\s*(-?\d+(?:[.,]\d+)?)\s*$/.exec(t);
+  if (!m) return null;
+  const lat = Number(m[1].replace(',', '.'));
+  const lon = Number(m[2].replace(',', '.'));
+  return Math.abs(lat) <= 90 && Math.abs(lon) <= 180 ? { lat, lon } : null;
+}
+
+const RAD = Math.PI / 180;
+export function sonnenPosition(datum, lat, lon) {
+  const d = datum.getTime() / 86400000 - 10957.5; // Tage seit 1.1.2000, 12 Uhr UTC
+  const g = (357.529 + 0.98560028 * d) * RAD;
+  const q = 280.459 + 0.98564736 * d;
+  const l = (q + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * RAD;
+  const e = (23.439 - 0.00000036 * d) * RAD;
+  const ra = Math.atan2(Math.cos(e) * Math.sin(l), Math.cos(l));
+  const dek = Math.asin(Math.sin(e) * Math.sin(l));
+  const sternzeit = ((280.46061837 + 360.98564736629 * d + lon) % 360) * RAD;
+  const h = sternzeit - ra;
+  const phi = lat * RAD;
+  const hoehe = Math.asin(Math.sin(phi) * Math.sin(dek) + Math.cos(phi) * Math.cos(dek) * Math.cos(h)) / RAD;
+  const richtung = (Math.atan2(Math.sin(h), Math.cos(h) * Math.sin(phi) - Math.tan(dek) * Math.cos(phi)) / RAD + 180 + 360) % 360;
+  return { hoehe, richtung };
+}
+
+export const himmelsrichtung = (grad) =>
+  ['Nord', 'Nordost', 'Ost', 'Südost', 'Süd', 'Südwest', 'West', 'Nordwest'][Math.round(((grad % 360) + 360) % 360 / 45) % 8];
+
+// Minuten des Tages (Ortszeit des Geräts), an denen die Sonnenhöhe eine Grenze kreuzt
+export function sonnenTag(datumIso, lat, lon) {
+  const [j, mo, ta] = String(datumIso || '').split('-').map(Number);
+  if (!j || !mo || !ta) return null;
+  const hoehen = [];
+  for (let i = 0; i <= 1440; i++) hoehen.push(sonnenPosition(new Date(j, mo - 1, ta, 0, i), lat, lon).hoehe);
+  const kreuzt = (grad, steigend) => {
+    for (let i = 0; i < 1440; i++) {
+      const [a, b] = [hoehen[i], hoehen[i + 1]];
+      if (steigend ? a < grad && b >= grad : a >= grad && b < grad) return i + (grad - a) / (b - a);
+    }
+    return null;
+  };
+  const aufgang = kreuzt(-0.833, true);
+  const untergang = kreuzt(-0.833, false);
+  return {
+    aufgang, untergang,
+    goldMorgen: [kreuzt(-4, true), kreuzt(6, true)],
+    goldAbend: [kreuzt(6, false), kreuzt(-4, false)],
+    blauAbend: [kreuzt(-4, false), kreuzt(-6, false)],
+    richtungAufgang: aufgang == null ? null : sonnenPosition(new Date(j, mo - 1, ta, 0, aufgang), lat, lon).richtung,
+    richtungUntergang: untergang == null ? null : sonnenPosition(new Date(j, mo - 1, ta, 0, untergang), lat, lon).richtung,
+    hoechste: Math.max(...hoehen),
+  };
+}
+
+export const uhrAusMin = (m) => (m == null ? '–' : alsZeit(Math.round(m)));
+
+// Sonne für einen Drehtag (braucht Datum und Koordinaten), sonst null
+export function sonneVon(tag) {
+  const k = koordinatenAus(tag?.koordinaten);
+  return k && tag?.datum ? sonnenTag(tag.datum, k.lat, k.lon) : null;
+}
+
+export function sonnenText(tag) {
+  const s = sonneVon(tag);
+  if (!s) return '';
+  if (s.aufgang == null || s.untergang == null) return s.hoechste > 0 ? 'Sonne geht nicht unter' : 'Sonne geht nicht auf';
+  return `Aufgang ${uhrAusMin(s.aufgang)} (${himmelsrichtung(s.richtungAufgang)}) · Untergang ${uhrAusMin(s.untergang)} (${himmelsrichtung(s.richtungUntergang)})`
+    + ` · Goldene Stunde ${uhrAusMin(s.goldMorgen[0])}–${uhrAusMin(s.goldMorgen[1])} und ${uhrAusMin(s.goldAbend[0])}–${uhrAusMin(s.goldAbend[1])}`
+    + ` · Blaue Stunde bis ${uhrAusMin(s.blauAbend[1])}`;
+}
+
+// Hinweis für einen Zeitplan-Block an einer Außen-Location (von/bis als "HH:MM")
+export function sonnenHinweis(s, von, bis) {
+  if (!s || !istZeit(von) || !istZeit(bis) || s.untergang == null) return '';
+  const [a, b] = [inMin(von), inMin(bis)];
+  if (a >= s.untergang || b <= s.aufgang) return 'dunkel (nach Sonnenuntergang)';
+  if (b > s.untergang) return `Sonnenuntergang ${uhrAusMin(s.untergang)}, mittendrin`;
+  if (a < s.goldAbend[1] && b > s.goldAbend[0]) return 'in der Goldenen Stunde';
+  if (a < s.goldMorgen[1] && b > s.goldMorgen[0]) return 'in der Goldenen Stunde (Morgen)';
+  return '';
+}
+
 // ---------- Texte zum Teilen ----------
 // "b" ist immer ein Bündel: { drehtag, locations, videos, shots }
 
@@ -418,6 +508,7 @@ export function schnittText(b) {
         z.push(`- [${s.erledigt ? 'x' : ' '}] ${s.favorit ? '★ ' : ''}${kopf ? kopf + ' ' : ''}(${infos})`);
         if (s.text && !inZeile) z.push(`  > ${einruecken(s.text, '  > ')}`);
         if (s.take) z.push(`  - Take: ${eineZeile(s.take)}`);
+        if (s.clips?.length) z.push(`  - Clips: ${s.clips.join(', ')}`);
         if (s.notiz) z.push(`  - Notiz: ${eineZeile(s.notiz)}`);
       }
     }
@@ -534,7 +625,7 @@ export function kopieAlsNeu(b) {
   const videos = (b.videos || []).map((v) => ({ ...v, id: neu(v.id), drehtagId: tag.id, geaendert: jetzt }));
   const shots = (b.shots || []).map((s) => ({
     ...s, id: neueId(), drehtagId: tag.id, locationId: um(s.locationId), videoId: um(s.videoId),
-    erledigt: false, favorit: false, take: '', spaeter: false, erledigtUm: 0, geaendert: jetzt,
+    erledigt: false, favorit: false, take: '', clips: [], spaeter: false, erledigtUm: 0, geaendert: jetzt,
   }));
   if (tag.briefing) tag.briefing = { geaendert: jetzt, fragen: tag.briefing.fragen.map((f) => ({ ...f, id: neueId(), antwort: '' })) };
   if (tag.zeitplan) {
