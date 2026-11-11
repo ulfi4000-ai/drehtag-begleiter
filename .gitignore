@@ -1,0 +1,11 @@
+# Das Repo ist öffentlich (GitHub Pages). Hinein kommt NUR die App fürs Handy.
+# Alles andere bleibt auf dem PC: Notizen, MCP-Server, Kundendaten, PC-Pfade.
+/*
+!/.gitignore
+!/.nojekyll
+!/index.html
+!/manifest.webmanifest
+!/sw.js
+!/css/
+!/js/
+!/icons/
