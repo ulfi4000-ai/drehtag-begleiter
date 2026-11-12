@@ -8,7 +8,7 @@ import { esc, toast } from './util.js';
 
 const KEY = 'fernbedienung';
 const STANDARD = {
-  weiter: ['PageDown', 'ArrowDown', 'ArrowRight', ' ', 'Enter', 'MediaPlayPause', 'MediaTrackNext', 'AudioVolumeDown'],
+  weiter: ['PageDown', 'ArrowDown', 'ArrowRight', ' ', 'Enter', 'MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaTrackNext', 'AudioVolumeDown'],
   zurueck: ['PageUp', 'ArrowUp', 'ArrowLeft', 'MediaTrackPrevious', 'AudioVolumeUp'],
 };
 

@@ -10,6 +10,7 @@ import {
 } from './modell.js';
 import { z, bildUrl, nachPos, anzahl, statsText, folienText, istLang, platzhalter, woerter } from './zustand.js';
 import { fernbedienungKarte } from './fernbedienung.js';
+import { istNativ, appFassung } from './nativ.js';
 
 // ---------- Bausteine ----------
 
@@ -1012,6 +1013,7 @@ export async function viewSicherung() {
       </section>
       ${fernbedienungKarte()}
       <p class="mute" style="text-align:center">${speicher}</p>
+      ${istNativ && appFassung.hier ? `<p class="mute" style="text-align:center">App-Fassung vom ${esc(appFassung.hier.name)}${appFassung.online?.code > appFassung.hier.code ? ` · <b>neue Fassung vom ${esc(appFassung.online.name)} liegt auf dem NAS (Drehtage › App)</b>` : ''}</p>` : ''}
     </main>`;
 }
 

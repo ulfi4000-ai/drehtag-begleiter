@@ -10,8 +10,10 @@
 import * as db from './db.js';
 import { z, urlsWechseln } from './zustand.js';
 import * as A from './ansichten.js';
-import { init, wachsen, sucheFuellen } from './aktionen.js';
+import { init, wachsen, sucheFuellen, einlesen } from './aktionen.js';
 import { initFernbedienung } from './fernbedienung.js';
+import { initNativ, istNativ } from './nativ.js';
+import { toast } from './util.js';
 
 const app = document.getElementById('app');
 let letzteRoute = null;
@@ -81,8 +83,10 @@ document.addEventListener('visibilitychange', () => {
 
 init(render);
 initFernbedienung();
+initNativ({ einlesen, toast });
 window.addEventListener('hashchange', render);
 render();
 
 // Service Worker: macht die App offline nutzbar
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(console.error);
+// (In der Android-App liegen die Dateien ohnehin auf dem Gerät, dort braucht es ihn nicht.)
+if ('serviceWorker' in navigator && !istNativ) navigator.serviceWorker.register('sw.js').catch(console.error);

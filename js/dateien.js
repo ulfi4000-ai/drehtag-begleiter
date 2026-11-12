@@ -35,6 +35,11 @@ export async function shareText(titel, text) {
 }
 
 export function herunterladen(name, blob) {
+  // In der Android-App gibt es keinen Download-Ordner aus dem WebView: dort über das Teilen-Menü speichern
+  if (window.Capacitor?.isNativePlatform?.()) {
+    navigator.share({ files: [new File([blob], name, { type: blob.type || 'application/octet-stream' })], title: name });
+    return;
+  }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = name;

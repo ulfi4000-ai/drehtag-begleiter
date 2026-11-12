@@ -281,7 +281,7 @@ async function openMedia(id) {
   });
 }
 
-async function einlesen(file) {
+export async function einlesen(file) {
   const buendel = await importDatei(file);
   toast(`${anzahl(buendel.length, 'Drehtag', 'Drehtage')} eingelesen und zusammengeführt`);
   const ziel = buendel.length === 1 ? `#/tag/${buendel[0].drehtag.id}` : '#/';
