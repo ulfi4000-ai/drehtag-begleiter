@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <!-- Nur eigene Dateien; die Befehle kommen vom Hauptgerät im selben Netz -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'">
+  <title>Teleprompter</title>
+  <link rel="stylesheet" href="geraet.css">
+</head>
+<body>
+  <!-- Teleprompter auf dem zweiten Gerät: zeigt nur den Text, gesteuert vom Hauptgerät -->
+  <div id="start" class="start">
+    <p class="gross">Teleprompter</p>
+    <p id="verbindung">Verbinde mit dem Hauptgerät …</p>
+    <button id="los">Antippen und loslegen</button>
+    <p class="klein">Danach Handy ins Rig. Gesteuert wird vom Hauptgerät oder mit einer Bluetooth-Fernbedienung.</p>
+  </div>
+  <div id="prompter" class="prompter" hidden>
+    <div class="scroll"><div class="text"></div></div>
+    <div class="linie"></div>
+    <div class="zaehler" hidden></div>
+    <div class="status"></div>
+  </div>
+  <video id="wach" src="wach.mp4" muted loop playsinline hidden></video>
+  <script type="module" src="../js/prompter-geraet.js"></script>
+</body>
+</html>

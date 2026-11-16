@@ -11,6 +11,7 @@ import {
 import { z, bildUrl, nachPos, anzahl, statsText, folienText, istLang, platzhalter, woerter } from './zustand.js';
 import { fernbedienungKarte } from './fernbedienung.js';
 import { istNativ, appFassung, sprache } from './nativ.js';
+import { gekoppelt } from './kopplung.js';
 
 // ---------- Bausteine ----------
 
@@ -550,7 +551,7 @@ function tabPlan(tag, locations, absender, shots = []) {
         <textarea name="kundenhinweis" class="auto" rows="2" placeholder="z. B. Räume aufgeräumt, Licht an, Haustiere woanders …">${esc(plan.kundenhinweis || '')}</textarea>
       </label>
       <label data-save="meta" data-id="absender">Absender unter dem Zeitplan
-        <input name="absender" value="${esc(absender || '')}" placeholder="z. B. Ulf · LensMOGic · Telefon" autocomplete="off">
+        <input name="absender" value="${esc(absender || '')}" placeholder="z. B. Name · Firma · Telefon" autocomplete="off">
       </label>
       <div class="btn-row" style="margin-top:0">
         <button class="btn primary" data-action="share-zeitplan" data-id="${tag.id}">An Kunden senden</button>
@@ -1045,8 +1046,9 @@ export async function viewFaden(id) {
       <button class="btn primary faden-ok" data-action="faden-erledigt" data-id="${shot.id}">✓ Erledigt</button>
       <div class="btn-row faden-neben">
         <button class="btn" data-action="faden-spaeter" data-id="${shot.id}">Später</button>
-        ${sprech ? `<button class="btn" data-action="prompt-text" data-id="${shot.id}">▶ Prompter</button>` : ''}
+        ${sprech ? `<button class="btn" data-action="prompt-text" data-id="${shot.id}">${gekoppelt() ? '▶ Auf 2. Gerät' : '▶ Prompter'}</button>` : ''}
         <a class="btn" href="#/shot/${shot.id}">Details</a>
+        ${istNativ ? `<button class="btn ${gekoppelt() ? 'an' : ''}" data-action="koppeln">${gekoppelt() ? '📱 Verbunden' : '📱 2. Gerät'}</button>` : ''}
       </div>
       ${fadenListe(nachholModus ? nachholen : st.shots, shot, videoVon, nachholModus, (s) => settingVon(tag, s.settingId)?.name || '')}
       ${optionalListe(optionalHier.filter((s) => s.id !== shot.id), videoVon, (s) => moeglicheOrte(s).filter((o) => o !== st?.locationId).map((o) => b.locations.find((l) => l.id === o)?.name).filter(Boolean))}

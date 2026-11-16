@@ -10,6 +10,7 @@ import { openSketch } from './sketch.js';
 import { openPrompter } from './prompter.js';
 import { sprachnotizAufnehmen } from './aufnahme.js';
 import { istNativ, sprache } from './nativ.js';
+import { gekoppelt, koppelnZeigen, textSenden, steuerungZeigen } from './kopplung.js';
 
 let render = async () => {};
 const app = () => document.getElementById('app');
@@ -301,6 +302,12 @@ async function auswerten(medienId, { sortieren }) {
     anzeige.fertig();
     render();
   }
+}
+
+// Ist ein Teleprompter-Gerät gekoppelt, bekommt es den Sprechtext des nächsten Shots von selbst
+async function prompterNachziehen(shot) {
+  if (!gekoppelt() || !['hook', 'oton', 'cta'].includes(shot.typ) || !(shot.text || '').trim()) return;
+  if (await textSenden(M.shotName(shot), shot.text)) toast('Text liegt auf dem Teleprompter');
 }
 
 // Fotos vor dem Speichern verkleinern, sonst läuft der Speicher schnell voll
@@ -715,6 +722,8 @@ const aktionen = {
     if (z.fadenModus === 'nachholen' && !nachher.nachholen.length) z.fadenModus = '';
     await render();
     window.scrollTo(0, 0);
+    const naechster = (nachher.stationen[nachher.idx]?.offen || nachher.nachholen)[0];
+    if (naechster) await prompterNachziehen(naechster);
   },
   async 'faden-spaeter'(id) {
     await aendereZeile('shots', id, (s) => { s.spaeter = true; });
@@ -761,6 +770,8 @@ const aktionen = {
     z.fadenShot = id;
     await render();
     window.scrollTo(0, 0);
+    const s = await db.get('shots', id);
+    if (s) await prompterNachziehen(s);
   },
   async 'faden-station'(tagId, b) {
     z.fadenShot = '';
@@ -898,8 +909,14 @@ const aktionen = {
   },
   async 'prompt-text'(id) {
     const s = await shotHolen(id);
+    // Gekoppeltes Teleprompter-Gerät? Dann dorthin, und hier die Fernsteuerung zeigen
+    if (gekoppelt()) {
+      if (await textSenden(M.shotName(s), s.text)) { steuerungZeigen(); return; }
+      toast('Teleprompter-Gerät nicht erreichbar, zeige den Text hier');
+    }
     openPrompter(M.shotName(s), s.text);
   },
+  koppeln: () => koppelnZeigen(render),
 
   // Teilen und Export
   async 'share-shotlist'(id) {

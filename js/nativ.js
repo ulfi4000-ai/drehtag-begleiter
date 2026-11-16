@@ -65,7 +65,7 @@ function tastenSteuern() {
   const pruefen = () => {
     const overlay = document.getElementById('overlay');
     const an = location.hash.startsWith('#/faden/') || location.hash.startsWith('#/sicherung')
-      || (!overlay.hidden && !!overlay.querySelector('.prompter'));
+      || (!overlay.hidden && !!overlay.querySelector('.prompter, .fern-prompter'));
     if (an !== zuletzt) { zuletzt = an; rufe('abfangen', { an }).catch(() => {}); }
   };
   window.addEventListener('hashchange', pruefen);

@@ -65,13 +65,18 @@ function beiTaste(e) {
 
   const overlay = document.getElementById('overlay');
   const prompter = !overlay.hidden && overlay.querySelector('.prompter');
+  const fern = !overlay.hidden && overlay.querySelector('.fern-prompter'); // zweites Gerät steuern
   const imFaden = location.hash.startsWith('#/faden/') && overlay.hidden;
-  if (!prompter && !imFaden) return;
+  if (!prompter && !fern && !imFaden) return;
 
   e.preventDefault(); // sonst löst z. B. die Leertaste zusätzlich den zuletzt getippten Knopf aus
   if (Date.now() < gesperrt) return;
   gesperrt = Date.now() + 600;
 
+  if (fern) {
+    klicken(was === 'weiter' ? '#overlay [data-fp="umschalten"]' : '#overlay [data-fp="zurueck"]');
+    return;
+  }
   if (prompter) {
     if (was === 'weiter') klicken('#overlay [data-p="play"]');
     else { const sc = prompter.querySelector('.p-scroll'); sc.scrollTop = Math.max(0, sc.scrollTop - sc.clientHeight / 3); }

@@ -561,3 +561,13 @@ button.fab { border: 0; font: inherit; font-weight: 700; font-size: 17px; cursor
 .abschluss-liste { margin: 4px 0 10px 18px; font-size: 14px; }
 .faden-ende { width: 100%; margin-top: 18px; opacity: .8; }
 .hinweis.abgeschlossen { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+/* Teleprompter-Gerät koppeln und steuern */
+.kopplung-qr { display: block; width: min(70vw, 280px); margin: 10px auto; border-radius: 8px; background: #fff; image-rendering: pixelated; }
+.kopplung-url { text-align: center; font-size: 12px; color: var(--mute); overflow-wrap: anywhere; }
+.kopplung-status { margin: 8px 0; text-align: center; font-weight: 700; }
+.kopplung-schritte { margin: 0 0 4px 18px; font-size: 14px; }
+.fern-prompter .fp-reihe { display: flex; align-items: center; gap: 6px; margin: 8px 0; }
+.fern-prompter .fp-reihe .btn { flex: 1; }
+.fern-prompter .fp-wert { min-width: 40px; text-align: center; font-weight: 700; }
+.faden-neben .btn.an { border-color: var(--ok); color: var(--ok); }

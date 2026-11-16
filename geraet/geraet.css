@@ -1,0 +1,21 @@
+/* Teleprompter auf dem zweiten Gerät: schwarz, großer Text, nichts lenkt ab */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #000; color: #fff; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overscroll-behavior: none; }
+[hidden] { display: none !important; }
+
+.start { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; height: 100%; padding: 24px; text-align: center; }
+.start .gross { margin: 0; font-size: 28px; font-weight: 700; }
+.start .klein { max-width: 340px; color: #999; font-size: 15px; }
+#verbindung { color: #bbb; }
+#verbindung.ok { color: #6bd68f; }
+#los { padding: 16px 28px; border: 0; border-radius: 14px; background: #CD0000; color: #fff; font: inherit; font-size: 20px; font-weight: 700; }
+
+.prompter { position: fixed; inset: 0; }
+.scroll { position: absolute; inset: 0; overflow-y: auto; scrollbar-width: none; }
+.scroll::-webkit-scrollbar { display: none; }
+.text { padding: 45vh 6vw 80vh; font-size: 44px; line-height: 1.35; font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
+.text.gespiegelt { transform: scaleX(-1); }
+.linie { position: absolute; left: 0; right: 0; top: 38vh; height: 0; border-top: 2px solid rgba(205, 0, 0, .7); pointer-events: none; }
+.zaehler { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 30vw; font-weight: 800; background: rgba(0, 0, 0, .6); }
+.status { position: absolute; right: 10px; top: calc(8px + env(safe-area-inset-top)); padding: 4px 10px; border-radius: 999px; background: rgba(255, 255, 255, .12); color: #ccc; font-size: 13px; }
+.status.weg { background: #CD0000; color: #fff; }
