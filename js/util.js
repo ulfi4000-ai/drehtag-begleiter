@@ -6,12 +6,21 @@ export const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 let toastTimer;
-export function toast(msg) {
+// Kurzer Hinweis unten. Optional mit Knopf (z. B. „Rückgängig“), dann bleibt er länger stehen.
+export function toast(msg, { knopf = '', beiKnopf = null, dauer = 0 } = {}) {
   const el = document.getElementById('toast');
   el.textContent = msg;
+  el.classList.toggle('mit-knopf', !!knopf);
+  if (knopf) {
+    const b = document.createElement('button');
+    b.className = 'toast-knopf';
+    b.textContent = knopf;
+    b.addEventListener('click', () => { clearTimeout(toastTimer); el.hidden = true; beiKnopf?.(); });
+    el.append(' ', b);
+  }
   el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.hidden = true; }, 2600);
+  toastTimer = setTimeout(() => { el.hidden = true; }, dauer || (knopf ? 8000 : 2600));
 }
 
 // Vollbild-Ebene öffnen. Die Zurück-Taste am Handy schließt sie wieder,

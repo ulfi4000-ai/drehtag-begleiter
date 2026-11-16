@@ -518,3 +518,46 @@ button.fab { border: 0; font: inherit; font-weight: 700; font-size: 17px; cursor
 /* Sonnenstand im Plan */
 .sonne-hinweis { margin: 6px 0 0; font-size: 14px; color: var(--mute); }
 .sonne-hinweis.warn { color: var(--rot); font-weight: 600; }
+
+/* Sprachnotiz: offene Punkte und Fortschritt */
+.offene-punkte { margin: 8px 0; padding: 8px 10px; border-left: 3px solid var(--rot); border-radius: 8px; background: var(--bg); font-size: 14px; }
+.offene-punkte ul { margin: 4px 0 0 18px; }
+.auswertung .aw-schritt { margin: 8px 0; font-weight: 600; }
+.auswertung .bar { margin-bottom: 10px; }
+
+/* Optionale Shots */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; }
+.chip input { margin: 0; }
+.shots.optional .shot { opacity: .85; border-style: dashed; }
+.faden-setting-bild { display: block; width: 100%; max-height: 160px; object-fit: contain; margin-top: 6px; border-radius: 8px; background: #fff; }
+.s-symbole button.an, .s-tools button.an { outline: 2px solid var(--rot); }
+.faden-auto { margin: 6px 0; font-size: 13px; color: var(--mute); }
+.faden-auto button { margin-left: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: none; color: inherit; font: inherit; }
+
+/* Ampel "Bereit für den Dreh?" */
+.ampel-licht { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; vertical-align: middle; background: var(--mute); flex: none; }
+.ampel-licht.rot, .ampel.rot .ampel-licht { background: var(--rot); }
+.ampel-licht.orange, .ampel.orange .ampel-licht { background: #E8890C; }
+.ampel-licht.gruen, .ampel.gruen .ampel-licht { background: var(--ok); }
+.ampel { padding: 10px 12px; }
+.ampel-kopf { display: flex; align-items: center; gap: 4px; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; }
+.ampel-kopf .mute { margin-left: auto; }
+.ampel-liste { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+.ampel-punkt { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-left: 10px; border-left: 3px solid var(--mute); }
+.ampel-punkt.rot { border-color: var(--rot); }
+.ampel-punkt.orange { border-color: #E8890C; }
+.ampel-punkt a { flex: 1; color: inherit; }
+.ampel-punkt.ignoriert { opacity: .5; }
+.ampel-punkt.ignoriert a { text-decoration: line-through; }
+.ampel-posten { width: 100%; margin: 2px 0 0; padding-left: 16px; font-size: 14px; }
+.ampel-posten li { margin: 4px 0; }
+
+/* Hinweis mit "Rückgängig" */
+#toast.mit-knopf { display: flex; align-items: center; gap: 10px; text-align: left; }
+.toast-knopf { flex: none; padding: 6px 12px; border: 0; border-radius: 999px; background: #fff; color: #111; font: inherit; font-weight: 700; }
+
+/* Drehtag abschließen */
+.abschluss-liste { margin: 4px 0 10px 18px; font-size: 14px; }
+.faden-ende { width: 100%; margin-top: 18px; opacity: .8; }
+.hinweis.abgeschlossen { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

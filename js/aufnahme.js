@@ -1,5 +1,6 @@
 // Sprachnotiz aufnehmen: Mikrofon im Vollbild, große Uhr, offene Fragen als Gedächtnisstütze.
-// Die Aufnahme bleibt auf dem Gerät; transkribiert wird später am PC (Whisper, lokal).
+// Die Aufnahme bleibt auf dem Gerät. Transkribiert wird in der Android-App direkt auf dem Handy
+// (Whisper, js/nativ.js), im Browser später am PC (MCP-Server).
 import { esc, showOverlay, toast } from './util.js';
 
 // Formate in der Reihenfolge, in der wir sie versuchen (Android Chrome: WebM/Opus)

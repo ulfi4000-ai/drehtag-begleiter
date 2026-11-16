@@ -14,6 +14,8 @@ export const z = {
   orteOffen: new Set(),      // Locations, deren Shot-Liste im Reiter "Orte" aufgeklappt ist
   suche: '',
   fadenShot: '',             // im Roten Faden von Hand gewählter Shot
+  ampelOffen: '',            // Drehtag, dessen Ampel aufgeklappt ist
+  fadenAuto: '',             // Drehtag, dessen Faden beim Start automatisch geöffnet wurde
   fadenZuletzt: '',          // zuletzt abgehakter Shot (für "Rückgängig")
   fadenModus: '',            // 'nachholen', wenn die zurückgestellten Shots dran sind
 };

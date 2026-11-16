@@ -6,11 +6,11 @@ import {
   TYPEN, STATUS, FRAGEN_SETS, typVon, statusVon, gruppieren, shotName,
   videoStand, videoStandText, zeitplanMitZeiten, zeitplanMinuten,
   fadenStand, fadenZeit, SCHAETZUNG, SETTING_FELDER, settingsVon, settingVon, settingKurz,
-  sonnenText, sonneVon, sonnenHinweis, uhrAusMin,
+  sonnenText, sonneVon, sonnenHinweis, uhrAusMin, istOptional, moeglicheOrte, bereitschaft,
 } from './modell.js';
 import { z, bildUrl, nachPos, anzahl, statsText, folienText, istLang, platzhalter, woerter } from './zustand.js';
 import { fernbedienungKarte } from './fernbedienung.js';
-import { istNativ, appFassung } from './nativ.js';
+import { istNativ, appFassung, sprache } from './nativ.js';
 
 // ---------- Bausteine ----------
 
@@ -46,8 +46,8 @@ function medienBlock(medien, owner, id, { skizze = true, mehrere = true } = {}) 
 // ---------- Startseite ----------
 
 export async function viewHome() {
-  const [tage, shots, videos, backup] = await Promise.all([
-    db.getAll('drehtage'), db.getAll('shots'), db.getAll('videos'), db.getMeta('letztesBackup'),
+  const [tage, shots, videos, backup, orte] = await Promise.all([
+    db.getAll('drehtage'), db.getAll('shots'), db.getAll('videos'), db.getMeta('letztesBackup'), db.getAll('locations'),
   ]);
   const h = heute();
   const echte = tage.filter((t) => !t.vorlage);
@@ -64,7 +64,7 @@ export async function viewHome() {
     const meta = [fmtDatum(t.datum), t.uhrzeit ? t.uhrzeit + ' Uhr' : '', t.ort].filter(Boolean).join(' · ');
     return `
       <a class="card" href="#/tag/${t.id}">
-        <div class="tag-kunde">${esc(t.kunde)}${t.datum === h ? '<span class="badge">Heute</span>' : ''}</div>
+        <div class="tag-kunde">${!t.abgeschlossen && t.datum && t.datum >= h ? `<i class="ampel-licht ${bereitschaft({ drehtag: t, shots: ss, locations: orte.filter((l) => l.drehtagId === t.id) }).stufe}"></i>` : ''}${esc(t.kunde)}${t.datum === h ? '<span class="badge">Heute</span>' : ''}</div>
         <div class="tag-meta">${esc(meta)}</div>
         <div class="tag-zeile">${statusBadge(t.status)}<span class="mute">${vv.length ? anzahl(vv.length, 'Video', 'Videos') + ' · ' : ''}${ss.length ? `${fertig}/${ss.length} Shots` : 'Noch keine Shots'}</span></div>
         <div class="bar"><i style="width:${ss.length ? (fertig / ss.length) * 100 : 0}%"></i></div>
@@ -181,6 +181,30 @@ export function viewTagForm(tag, art) {
 
 // ---------- Drehtag ----------
 
+const AMPEL = { rot: 'Fehlt noch etwas', orange: 'Fast bereit', gruen: 'Bereit für den Dreh' };
+
+// Ampel "Bereit für den Dreh?": zugeklappt eine Zeile, aufgeklappt die Punkte mit „Ignorieren“
+function ampelKarte(b) {
+  const tag = b.drehtag;
+  const a = bereitschaft(b);
+  const offen = z.ampelOffen === tag.id;
+  const ziel = (x) => (x.ziel === 'bearbeiten' ? `#/tag/${tag.id}/bearbeiten` : `#/tag/${tag.id}${x.ziel === 'shots' ? '' : '/' + x.ziel}`);
+  const zeile = (x) => `
+    <li class="ampel-punkt ${x.stufe} ${x.ignoriert ? 'ignoriert' : ''}">
+      <a href="${ziel(x)}">${esc(x.text)}</a>
+      ${x.id === 'datum' || x.id === 'shots' ? '' : `<button class="mini" data-action="bereit-ignorieren" data-id="${tag.id}" data-punkt="${x.id}">${x.ignoriert ? 'Wieder prüfen' : 'Ignorieren'}</button>`}
+      ${x.posten && !x.ignoriert ? `<ul class="ampel-posten">${x.posten.map((p) => `<li>${esc(p.name)} <button class="mini" data-action="posten-ignorieren" data-tag="${tag.id}" data-id="${p.id}">brauche ich nicht</button></li>`).join('')}</ul>` : ''}
+    </li>`;
+  return `
+    <section class="card ampel ${a.stufe}">
+      <button class="ampel-kopf" data-action="ampel-auf" data-id="${tag.id}">
+        <i class="ampel-licht"></i><b>${AMPEL[a.stufe]}</b>
+        <span class="mute">${a.offen ? anzahl(a.offen, 'Punkt', 'Punkte') + (offen ? ' ▴' : ' ▾') : '✓'}</span>
+      </button>
+      ${offen ? `<ul class="ampel-liste">${a.punkte.map(zeile).join('') || '<li class="mute">Nichts offen.</li>'}</ul>` : ''}
+    </section>`;
+}
+
 function infoKarte(tag) {
   const wann = [tag.datum ? fmtDatum(tag.datum) : '', tag.uhrzeit ? tag.uhrzeit + ' Uhr' : ''].filter(Boolean).join(', ');
   const leer = !wann && !tag.ort && !tag.ansprechpartner && !tag.telefon && !tag.notizen;
@@ -221,7 +245,9 @@ function sprachnotizKarte(tag, medien) {
   return `
     <section class="card">
       <h2>Sprachnotiz nach dem Gespräch</h2>
-      <p class="mute" style="margin-bottom:10px">Nach dem Telefonat alles Wichtige einsprechen. Die offenen Fragen stehen dabei auf dem Bildschirm. Am PC transkribiert Whisper die Aufnahme, und Claude füllt daraus das Briefing.</p>
+      <p class="mute" style="margin-bottom:10px">${istNativ
+        ? 'Nach dem Telefonat alles Wichtige einsprechen. Die offenen Fragen stehen dabei auf dem Bildschirm. Whisper transkribiert auf dem Handy; auf Wunsch sortiert Claude das Briefing, die Videos und Hook-Vorschläge ein (Einstellung unter „Sicherung“).'
+        : 'Nach dem Telefonat alles Wichtige einsprechen. Die offenen Fragen stehen dabei auf dem Bildschirm. Ausgewertet wird in der Android-App direkt auf dem Handy, sonst am PC über „Datei für Claude“.'}</p>
       <button class="btn primary big" data-action="sprachnotiz" data-id="${tag.id}">● Sprachnotiz aufnehmen</button>
       ${notizen.map((m) => `
         <div class="audio-notiz">
@@ -230,10 +256,17 @@ function sprachnotizKarte(tag, medien) {
             <span class="mute">${minSek(m.dauer)} Min.</span>
           </div>
           <audio controls preload="metadata" src="${bildUrl(m.blob)}"></audio>
+          ${m.eingeordnet ? `<p class="hinweis">✓ Einsortiert: ${anzahl((m.einordnung?.antworten || 0) + (m.einordnung?.fragen || 0), 'Antwort', 'Antworten')}, ${anzahl(m.einordnung?.videos || 0, 'neues Video', 'neue Videos')}, ${anzahl(m.einordnung?.shots || 0, 'Shot', 'Shots')} – bitte durchsehen.</p>` : ''}
+          ${m.offenePunkte?.length ? `<div class="offene-punkte"><b>Noch klären</b><ul>${m.offenePunkte.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div>` : ''}
           ${m.transkript
-            ? `<details><summary>Transkript</summary><p class="transkript">${esc(m.transkript)}</p></details>`
-            : '<p class="mute">Noch nicht transkribiert. Mit „Datei für Claude“ an den PC geben.</p>'}
-          <button class="mini" data-action="del-audio" data-id="${m.id}">Löschen</button>
+            ? `<details${m.eingeordnet ? '' : ' open'}><summary>Transkript${m.transkribiertMit ? ` <span class="mute">(${esc(m.transkribiertMit)})</span>` : ''}</summary><p class="transkript">${esc(m.transkript)}</p></details>`
+            : `<p class="mute">${istNativ ? 'Noch nicht transkribiert.' : 'Noch nicht transkribiert. In der Android-App oder mit „Datei für Claude“ am PC.'}</p>`}
+          <div class="btn-row">
+            ${istNativ && !m.transkript ? `<button class="mini" data-action="notiz-transkribieren" data-id="${m.id}">Transkribieren</button>` : ''}
+            ${istNativ ? `<button class="mini" data-action="notiz-einsortieren" data-id="${m.id}">${m.eingeordnet ? 'Erneut einsortieren' : 'Einsortieren'}</button>` : ''}
+            ${istNativ && m.transkript ? `<button class="mini" data-action="notiz-neu" data-id="${m.id}">Neu transkribieren</button>` : ''}
+            <button class="mini" data-action="del-audio" data-id="${m.id}">Löschen</button>
+          </div>
         </div>`).join('')}
     </section>`;
 }
@@ -307,6 +340,7 @@ function shotZeile(s, i, gruppe, { locations = [], videos = [], medien = [], set
     settings.find((x) => x.id === s.settingId)?.name,
     s.format,
     bilder.length ? anzahl(bilder.length, 'Bild', 'Bilder') : '',
+    istOptional(s) ? `optional, auch ${s.auchAn.map((o) => locations.find((l) => l.id === o)?.name).filter(Boolean).join(', ')}` : '',
   ].filter(Boolean).join(' · ');
   const lang = istLang(s.text);
   const offen = z.aufgeklappt.has(s.id);
@@ -391,7 +425,7 @@ function ortShots(ss, { locations, videos, medien, settings = [] }) {
 // Reiter "Orte": Exposé- und Scouting-Fotos, Locations mit Notizen, Bildern und ihren Shots zum Abhaken
 function tabOrte(tag, shots, locations, videos, medien) {
   const id = tag.id;
-  const korb = medien.filter((m) => !m.shotId && !m.locationId && m.art !== 'audio');
+  const korb = medien.filter((m) => !m.shotId && !m.locationId && !m.settingId && m.art !== 'audio');
   const karte = (l, i) => {
     const ss = shots.filter((s) => s.locationId === l.id);
     const fertig = ss.filter((s) => s.erledigt).length;
@@ -479,7 +513,7 @@ function tabPlan(tag, locations, absender, shots = []) {
          <button class="move" data-action="del-posten" data-tag="${tag.id}" data-id="${p.id}" aria-label="Posten löschen">✕</button>
        </div>`
     : `<label class="check-row posten ${p.ok ? 'fertig' : ''}">
-         <input type="checkbox" class="chk" data-change="toggle-posten" data-tag="${tag.id}" data-id="${p.id}" ${p.ok ? 'checked' : ''}> ${esc(p.name)}
+         <input type="checkbox" class="chk" data-change="toggle-posten" data-tag="${tag.id}" data-id="${p.id}" ${p.ok ? 'checked' : ''}> ${esc(p.name)}${p.ignoriert && !p.ok ? ' <small class="mute">· nicht nötig</small>' : ''}
        </label>`;
 
   const reihe = tag.faden?.reihenfolge || 'video';
@@ -560,6 +594,10 @@ export async function viewTag(id, tab) {
     </header>
     <main>
       ${tag.vorlage ? '' : `<a class="btn primary big faden-start" href="#/faden/${id}">▶ Roter Faden</a>`}
+      ${tag.abgeschlossen
+        ? `<p class="hinweis abgeschlossen">✓ Abgeschlossen am ${new Date(tag.abgeschlossen).toLocaleDateString('de-DE')} <button class="mini" data-action="tag-oeffnen" data-id="${id}">Wieder öffnen</button></p>`
+        : !tag.vorlage && tag.datum && tag.datum <= heute() ? `<button class="btn big" data-action="tag-abschliessen" data-id="${id}">Drehtag abschließen</button>` : ''}
+      ${tag.vorlage || tag.abgeschlossen ? '' : ampelKarte(b)}
       ${infoKarte(tag)}
       <nav class="tabs tabs4">
         ${reiter.map(([r, l]) => `<a class="${tab === r ? 'an' : ''}" href="#/tag/${id}${r === 'shots' ? '' : '/' + r}">${l}</a>`).join('')}
@@ -638,6 +676,12 @@ export async function viewShot(id) {
           <label>Video <select name="videoId">${videoOptionen(videos, shot.videoId)}</select></label>
           <label>Location <select name="locationId">${ortOptionen(locations, shot.locationId)}</select></label>
         </div>
+        ${locations.length > 1 ? `
+        <div class="field">Ort noch offen? Auch möglich an:
+          <div class="chips">${locations.filter((l) => l.id !== shot.locationId).map((l) => `
+            <label class="chip"><input type="checkbox" data-change="auch-an" data-id="${shot.id}" value="${l.id}" ${(shot.auchAn || []).includes(l.id) ? 'checked' : ''}><span>${esc(l.name)}</span></label>`).join('')}</div>
+          <small class="mute">Dann steht der Shot im Roten Faden an allen gewählten Orten unter „Optional“ und blockiert dort nichts.</small>
+        </div>` : ''}
         <label>Setting <select name="settingId">${auswahl(settingsVon(tag), shot.settingId, 'Ohne Setting', '+ Neues Setting …')}</select></label>
         <label>Take <input name="take" value="${esc(shot.take)}" placeholder="z. B. Clip 0042, Take 3 – der beste" autocomplete="off"></label>
         ${shot.clips?.length ? `<p class="mute">Clips (von Claude zugeordnet): ${esc(shot.clips.join(', '))}</p>` : ''}
@@ -721,6 +765,11 @@ export async function viewSetting(tagId, settingId) {
         ${SETTING_FELDER.map((f) => `<label>${f.label} <input name="${f.id}" value="${esc(x[f.id])}" placeholder="${esc(f.platz)}" autocomplete="off"></label>`).join('')}
         <label>Notiz <textarea name="notiz" class="auto" rows="2" placeholder="Bildausschnitt, Höhe, Abstand, Besonderheiten …">${esc(x.notiz)}</textarea></label>
         <button class="btn" type="button" data-action="setting-merken" data-tag="${tagId}" data-id="${x.id}">In Bibliothek merken</button>
+      </section>
+      <section class="card">
+        <h2>Bild vom Aufbau</h2>
+        <p class="mute" style="margin-bottom:10px">Foto vom Set oder Skizze von oben. Beim Zeichnen unter „Symbole“ Licht, Kamera, Person und Mikro setzen; ziehen gibt die Richtung an.</p>
+        ${medienBlock(b.medien.filter((m) => m.settingId === x.id), 'setting', `${tagId}~${x.id}`)}
       </section>
       <section class="card">
         <div class="kopfzeile"><h2>Shots zuordnen</h2><span class="mute">${zugeordnet.length} zugeordnet</span></div>
@@ -869,6 +918,29 @@ function fadenListe(shots, aktuell, videoVon, nachholModus, settingName = () => 
     + block('Erledigt', fertig);
 }
 
+// Optionale Shots einer Station: Ort war bei der Planung offen. Sie zählen nicht zum Fortschritt.
+function optionalListe(liste, videoVon, anderswo) {
+  if (!liste.length) return '';
+  return `
+    <p class="abschnitt">Optional hier · ${liste.length}</p>
+    <ul class="shots optional">${liste.map((s) => {
+      const typ = typVon(s.typ);
+      const orte = anderswo(s);
+      return `
+      <li class="shot typ-${typ.id}">
+        <div class="shot-kopf">
+          <input type="checkbox" class="chk" data-change="toggle-shot" data-id="${s.id}" aria-label="Erledigt">
+          <button class="shot-main faden-wahl" data-action="faden-waehle" data-id="${s.id}">
+            <span class="schilder"><span class="tag tag-${typ.id}">${typ.kurz}</span><span class="fav">optional</span></span>
+            ${s.titel ? `<span class="shot-titel">${esc(s.titel)}</span>` : ''}
+            ${s.text ? `<span class="shot-text ${!s.titel ? 'solo' : ''} gekuerzt2">${esc(s.text)}</span>` : ''}
+            <span class="shot-meta">${esc([videoVon(s)?.name, orte.length ? 'auch möglich: ' + orte.join(', ') : ''].filter(Boolean).join(' · '))}</span>
+          </button>
+        </div>
+      </li>`;
+    }).join('')}</ul>`;
+}
+
 export async function viewFaden(id) {
   const b = await db.buendel(id);
   if (!b) return null;
@@ -877,7 +949,9 @@ export async function viewFaden(id) {
   const nachholModus = nachholen.length && (idx < 0 || z.fadenModus === 'nachholen');
   const st = nachholModus ? null : stationen[idx];
   const liste = nachholModus ? nachholen : st ? st.offen : [];
-  const shot = liste.find((s) => s.id === z.fadenShot) || liste[0] || null;
+  const optionalHier = st ? st.optional : [];
+  const shot = liste.find((s) => s.id === z.fadenShot) || optionalHier.find((s) => s.id === z.fadenShot) || liste[0] || null;
+  const shotOptional = shot && istOptional(shot);
   const zuletzt = z.fadenZuletzt ? b.shots.find((s) => s.id === z.fadenZuletzt && s.erledigt) : null;
   const videoVon = (s) => b.videos.find((v) => v.id === s.videoId);
   const ortVon = (s) => b.locations.find((l) => l.id === s.locationId);
@@ -923,17 +997,19 @@ export async function viewFaden(id) {
       <section class="faden-karte faden-fertig">
         <h2 class="faden-titel">Alles im Kasten.</h2>
         <p>${erledigt} von ${gesamt} Shots erledigt, nichts zurückgestellt.</p>
+        <button class="btn primary big" data-action="tag-abschliessen" data-id="${tag.id}">Drehtag abschließen</button>
         <a class="btn big" href="#/tag/${tag.id}">Zur Shotliste</a>
       </section>`;
   } else if (!shot) {
-    // Station ohne Shots: Aufbau, Pause, Abbau
+    // Station ohne Shots: Aufbau, Pause, Abbau (optionale Shots stehen darunter)
     inhalt = `
       <section class="faden-karte">
         <h2 class="faden-titel">${esc(st.titel)}</h2>
         ${st.dauer ? `<p class="mute">geplant ${st.dauer} Min.</p>` : ''}
         ${tag.zeitplan?.bloecke?.find((x) => 'b:' + x.id === st.key)?.hinweis ? `<p>${esc(tag.zeitplan.bloecke.find((x) => 'b:' + x.id === st.key).hinweis)}</p>` : ''}
       </section>
-      <button class="btn primary faden-ok" data-action="faden-station-fertig" data-id="${tag.id}" data-key="${esc(st.key)}">✓ Erledigt, weiter</button>`;
+      <button class="btn primary faden-ok" data-action="faden-station-fertig" data-id="${tag.id}" data-key="${esc(st.key)}">✓ Erledigt, weiter</button>
+      ${optionalListe(st.optional, videoVon, () => [])}`;
   } else {
     const typ = typVon(shot.typ);
     const video = videoVon(shot);
@@ -943,11 +1019,13 @@ export async function viewFaden(id) {
     const reihe = st ? st.shots : [];
     const vorher = reihe[reihe.findIndex((s) => s.id === shot.id) - 1];
     const umbau = setting && vorher && vorher.settingId !== shot.settingId;
+    const settingBild = setting && umbau ? b.medien.filter((m) => m.settingId === setting.id).sort((p, q) => q.erstellt - p.erstellt)[0] : null;
     const settingBlock = setting ? `
       <a class="faden-setting ${umbau ? 'umbau' : ''}" href="#/setting/${tag.id}/${setting.id}">
         <b>${umbau ? 'Umbau auf: ' : 'Setting: '}${esc(setting.name)}</b>
         ${settingKurz(setting) ? `<span>${esc(settingKurz(setting))}</span>` : ''}
         ${umbau && (setting.kamera || setting.notiz) ? `<span>${esc([setting.kamera, setting.notiz].filter(Boolean).join(' · '))}</span>` : ''}
+        ${settingBild ? `<img class="faden-setting-bild" src="${bildUrl(settingBild.blob)}" alt="Aufbau">` : ''}
       </a>` : '';
     const danach = liste.filter((s) => s.id !== shot.id);
     inhalt = `
@@ -956,6 +1034,7 @@ export async function viewFaden(id) {
         <button class="faden-label" data-action="faden-klappe" data-id="${shot.id}" aria-label="Klappe groß anzeigen">
           <span class="tag tag-${typ.id}">${typ.kurz}</span>
           <span>${esc(video ? video.name : 'Ohne Video')}</span>
+          ${shotOptional ? '<span class="fav">optional</span>' : ''}
         </button>
         ${shot.titel ? `<h2 class="faden-titel">${esc(shot.titel)}</h2>` : ''}
         ${shot.text ? `<div class="faden-text ${shot.titel ? '' : 'gross'}">${esc(shot.text)}</div>` : ''}
@@ -970,6 +1049,7 @@ export async function viewFaden(id) {
         <a class="btn" href="#/shot/${shot.id}">Details</a>
       </div>
       ${fadenListe(nachholModus ? nachholen : st.shots, shot, videoVon, nachholModus, (s) => settingVon(tag, s.settingId)?.name || '')}
+      ${optionalListe(optionalHier.filter((s) => s.id !== shot.id), videoVon, (s) => moeglicheOrte(s).filter((o) => o !== st?.locationId).map((o) => b.locations.find((l) => l.id === o)?.name).filter(Boolean))}
       ${!nachholModus && danach.length ? `<button class="btn faden-rest" data-action="faden-rest-spaeter" data-id="${tag.id}" data-key="${esc(st.key)}">Station verlassen, Rest später</button>` : ''}`;
   }
 
@@ -983,12 +1063,55 @@ export async function viewFaden(id) {
       ${band}
       <div class="bar faden-bar"><i style="width:${gesamt ? (erledigt / gesamt) * 100 : 0}%"></i></div>
       <p class="faden-status">${status}</p>
+      ${z.fadenAuto === tag.id ? `<p class="faden-auto">Automatisch geöffnet, weil heute Drehtag ist. <button data-action="faden-auto-aus" data-id="${tag.id}">Heute nicht mehr</button></p>` : ''}
       ${zuletzt ? `<p class="faden-zuletzt">✓ ${esc(kurz(shotName(zuletzt), 34))} <button data-action="faden-undo" data-id="${zuletzt.id}">Rückgängig</button></p>` : ''}
       ${inhalt}
+      ${st || nachholModus ? `<button class="btn faden-ende" data-action="tag-abschliessen" data-id="${tag.id}">Drehtag abschließen</button>` : ''}
     </main>`;
 }
 
 // ---------- Sicherung ----------
+
+// Einstellungen für die Sprachnotiz: Whisper-Modell, Modus, Claude-Schlüssel (nur in der Android-App)
+async function sprachKarte() {
+  if (!istNativ) {
+    return `<section class="card"><h2>Sprachnotizen</h2><p class="mute">Transkribieren und Einsortieren direkt auf dem Handy gibt es in der Android-App. Hier im Browser geht die Aufnahme über „Datei für Claude“ an den PC.</p></section>`;
+  }
+  let st = {};
+  try { st = await sprache.status(); } catch { /* ohne Plugin */ }
+  const modell = (await db.getMeta('whisperModell')) || 'schnell';
+  const modus = (await db.getMeta('sprachModus')) || 'sortieren';
+  const mb = (n) => `${Math.round(n / 1048576)} MB`;
+  const zeile = (id, name, info) => `
+    <div class="info-row">
+      <span>${name}<br><small class="mute">${info}</small></span>
+      <div>${st[id] ? `<b>${modell === id ? '✓ aktiv' : 'geladen'}</b> · ${mb(st[id])}` : '<span class="mute">nicht geladen</span>'}
+        <div class="btn-row" style="margin-top:4px">
+          ${modell === id && st[id] ? '' : `<button class="mini" data-action="sprach-modell" data-id="${id}">${st[id] ? 'Verwenden' : 'Laden'}</button>`}
+          ${st[id] ? `<button class="mini" data-action="sprach-modell-weg" data-id="${id}">Löschen</button>` : ''}
+        </div>
+      </div>
+    </div>`;
+  return `
+    <section class="card">
+      <h2>Sprachnotizen</h2>
+      <p class="mute" style="margin-bottom:8px">Whisper erkennt die Sprache auf dem Handy, ohne Internet. Das Modell wird einmal geladen.</p>
+      ${zeile('schnell', 'Schnell', 'Whisper small, ca. 190 MB')}
+      ${zeile('genau', 'Genau', 'Whisper large-v3-turbo, ca. 550 MB, langsamer')}
+      <div class="field" style="margin-top:12px">Nach dem Aufnehmen
+        <div class="seg" role="group" aria-label="Nach dem Aufnehmen">
+          <button data-action="sprach-modus" data-id="sortieren" class="${modus === 'sortieren' ? 'an' : ''}">Einsortieren</button>
+          <button data-action="sprach-modus" data-id="text" class="${modus === 'text' ? 'an' : ''}">Nur Text</button>
+        </div>
+      </div>
+      <p class="mute">Einsortieren: Claude verteilt das Transkript auf Briefing, Videos und Hook-Vorschläge. Dafür geht das Transkript (nicht die Aufnahme) übers Internet an Anthropic; ca. 5 Cent pro Notiz (Schätzung).</p>
+      <label>Claude-API-Schlüssel ${st.claude ? '<b>✓ hinterlegt</b>' : ''}
+        <input id="claude-schluessel" type="password" autocomplete="off" placeholder="${st.claude ? 'neuen Schlüssel eintragen oder leer lassen zum Entfernen' : 'sk-ant-…'}">
+      </label>
+      <p class="mute" style="margin-top:-6px">Wird verschlüsselt im Handy gespeichert und nur für diese Auswertung benutzt. Schlüssel gibt es unter console.anthropic.com.</p>
+      <button class="btn" data-action="claude-schluessel">Schlüssel speichern</button>
+    </section>`;
+}
 
 export async function viewSicherung() {
   const backup = await db.getMeta('letztesBackup');
@@ -1011,6 +1134,7 @@ export async function viewSicherung() {
         <p class="mute" style="margin-bottom:12px">Backup oder Drehtag-Datei (zum Beispiel zurück von Claude). Beide Stände werden zusammengeführt: Pro Eintrag gilt die jüngere Fassung, nichts Neueres wird überschrieben.</p>
         <label class="btn big">Datei auswählen<input type="file" hidden data-change="import-datei"></label>
       </section>
+      ${await sprachKarte()}
       ${fernbedienungKarte()}
       <p class="mute" style="text-align:center">${speicher}</p>
       ${istNativ && appFassung.hier ? `<p class="mute" style="text-align:center">App-Fassung vom ${esc(appFassung.hier.name)}${appFassung.online?.code > appFassung.hier.code ? ` · <b>neue Fassung vom ${esc(appFassung.online.name)} liegt auf dem NAS (Drehtage › App)</b>` : ''}</p>` : ''}

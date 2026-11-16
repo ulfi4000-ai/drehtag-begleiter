@@ -175,6 +175,12 @@ async function einspielen(fremd) {
   }
 }
 
+// Ein Bündel aus der Cloud (js/sync.js) einspielen: dieselbe Prüfung und Zusammenführung wie beim Einlesen
+export async function buendelEinspielen(b) {
+  dateiPruefen(b);
+  await einspielen(b);
+}
+
 // Liest ein Backup oder eine Drehtag-Datei ein. Nichts wird überschrieben, was hier neuer ist.
 export async function importDatei(file) {
   let daten;

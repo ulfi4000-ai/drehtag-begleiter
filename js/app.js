@@ -8,6 +8,7 @@
 //   dateien.js   Teilen, Backup, Drehtag-Datei, Zusammenführen
 //   sketch.js, prompter.js  Zeichenfläche und Teleprompter
 import * as db from './db.js';
+import * as M from './modell.js';
 import { z, urlsWechseln } from './zustand.js';
 import * as A from './ansichten.js';
 import { init, wachsen, sucheFuellen, einlesen } from './aktionen.js';
@@ -81,11 +82,28 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && location.hash.startsWith('#/faden/')) fadenPflege(true);
 });
 
+// Am Drehtag gleich in den Roten Faden, aber nur beim Öffnen der App auf der Startseite.
+// Wer im Faden „Heute nicht automatisch“ tippt, bleibt für diesen Tag verschont.
+async function fadenAutoOeffnen() {
+  if (location.hash && location.hash !== '#/' && location.hash !== '#') return;
+  const auswahl = (await db.getMeta('fadenAutoAus')) || {};
+  const aus = auswahl.datum === M.heute() ? auswahl.tage || [] : [];
+  const tag = M.fadenAutoTag(await db.getAll('drehtage'), { aus });
+  if (!tag) return;
+  z.fadenAuto = tag.id;
+  location.replace('#/faden/' + tag.id);
+}
+let verstecktSeit = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') verstecktSeit = Date.now();
+  else if (verstecktSeit && Date.now() - verstecktSeit > 20 * 60000) fadenAutoOeffnen();
+});
+
 init(render);
 initFernbedienung();
 initNativ({ einlesen, toast });
 window.addEventListener('hashchange', render);
-render();
+fadenAutoOeffnen().finally(render);
 
 // Service Worker: macht die App offline nutzbar
 // (In der Android-App liegen die Dateien ohnehin auf dem Gerät, dort braucht es ihn nicht.)

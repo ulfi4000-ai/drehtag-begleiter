@@ -102,6 +102,45 @@ async function updatePruefen(toast) {
   } catch { /* ohne Netz kein Hinweis */ }
 }
 
+// ---------- Sprachnotiz: Whisper auf dem Handy, Claude zum Einsortieren ----------
+
+// Aufnahme (WebM/Opus) in 16-kHz-Mono-PCM umwandeln, wie Whisper es braucht; Ergebnis Base64
+export async function pcm16k(blob) {
+  const roh = await blob.arrayBuffer();
+  const ctx = new AudioContext();
+  let audio;
+  try { audio = await ctx.decodeAudioData(roh); } finally { ctx.close(); }
+  const laenge = Math.ceil(audio.duration * 16000);
+  const off = new OfflineAudioContext(1, laenge, 16000);
+  const quelle = off.createBufferSource();
+  quelle.buffer = audio; // mehrere Kanäle werden dabei zu Mono gemischt
+  quelle.connect(off.destination);
+  quelle.start();
+  const daten = (await off.startRendering()).getChannelData(0);
+  const pcm = new Int16Array(daten.length);
+  for (let i = 0; i < daten.length; i++) pcm[i] = Math.max(-32768, Math.min(32767, Math.round(daten[i] * 32767)));
+  return alsBase64(new Blob([pcm.buffer]));
+}
+
+export const sprache = {
+  status: () => rufe('modellStatus'),
+  modellLaden: (modell, beiFortschritt) => {
+    const h = C.addListener('Drehtag', 'modellFortschritt', (d) => beiFortschritt?.(d.prozent));
+    return rufe('modellLaden', { modell }).finally(() => h.remove());
+  },
+  modellLoeschen: (modell) => rufe('modellLoeschen', { modell }),
+  async transkribieren(blob, { modell, hinweis, beiFortschritt }) {
+    const pcm = await pcm16k(blob);
+    const h = C.addListener('Drehtag', 'whisperFortschritt', (d) => beiFortschritt?.(d.prozent));
+    try { return await rufe('transkribieren', { pcm, modell, hinweis }); } finally { h.remove(); }
+  },
+  claudeSchluessel: (schluessel) => rufe('claudeSchluessel', { schluessel }),
+  async einsortieren({ system, inhalt, schema }) {
+    const r = await rufe('einsortieren', { system, inhalt, schema: JSON.stringify(schema) });
+    return JSON.parse(r.json);
+  },
+};
+
 export function initNativ({ einlesen, toast }) {
   if (!istNativ) return;
   document.documentElement.classList.add('nativ');

@@ -237,6 +237,10 @@ export function fadenOrdnen(shots, videos = [], reihenfolge = 'video', settings 
 
 // Stationen des Fadens. Grundlage ist der Zeitplan; Locations mit Shots, die dort fehlen,
 // und Shots ohne Location kommen hinten dran. So geht nichts verloren, auch ohne Planung.
+// Optionaler Shot: Es ist noch offen, an welchem Ort er entsteht (shot.auchAn = weitere mögliche Locations)
+export const istOptional = (s) => (s.auchAn || []).length > 0;
+export const moeglicheOrte = (s) => [s.locationId, ...(s.auchAn || [])].filter(Boolean);
+
 export function fadenStationen(b) {
   const tag = b.drehtag;
   const faden = tag.faden || {};
@@ -247,7 +251,9 @@ export function fadenStationen(b) {
   const locs = [...(b.locations || [])].sort(nachPos);
   const vergeben = new Set();
   const stationen = [];
-  const an = (locId) => alleShots.filter((s) => s.locationId === locId);
+  // Optionale Shots (Ort noch offen) gehören zu keiner Station fest, sie tauchen unten in jeder passenden auf
+  const an = (locId) => alleShots.filter((s) => s.locationId === locId && !istOptional(s));
+  const optionale = alleShots.filter(istOptional);
 
   for (const x of zeitplanMitZeiten(tag.uhrzeit, tag.zeitplan?.bloecke)) {
     let ss = [];
@@ -266,7 +272,7 @@ export function fadenStationen(b) {
     vergeben.add(l.id);
     extra.push({ key: 'l:' + l.id, titel: l.name, locationId: l.id, shots: fadenOrdnen(ss, videos, reihe, settings) });
   }
-  const ohne = alleShots.filter((s) => !vergeben.has(s.locationId));
+  const ohne = alleShots.filter((s) => !istOptional(s) && !vergeben.has(s.locationId));
   if (ohne.length) extra.push({ key: 'ohne', titel: 'Ohne Location', locationId: '', shots: fadenOrdnen(ohne, videos, reihe, settings) });
   // Zusätzliche Stationen vor die leeren Blöcke am Ende (Abbau usw.), nicht dahinter
   let ende = stationen.length;
@@ -279,6 +285,7 @@ export function fadenStationen(b) {
     st.offen = st.shots.filter((s) => !s.erledigt && !s.spaeter);
     st.spaeter = st.shots.filter((s) => !s.erledigt && s.spaeter);
     st.erledigt = st.shots.filter((s) => s.erledigt).length;
+    st.optional = st.locationId ? fadenOrdnen(optionale.filter((s) => !s.erledigt && moeglicheOrte(s).includes(st.locationId)), videos, reihe, settings) : [];
     // Station ohne Shots (Aufbau, Pause, Abbau) ist fertig, wenn sie abgehakt wurde
     st.fertig = st.shots.length ? st.offen.length === 0 : fertigMarkiert.has(st.key);
   }
@@ -291,12 +298,72 @@ export function fadenStand(b) {
   const aktiv = b.drehtag.faden?.aktiv;
   let idx = stationen.findIndex((s) => s.key === aktiv && !s.fertig);
   if (idx < 0) idx = stationen.findIndex((s) => !s.fertig);
-  const shots = b.shots || [];
+  // Offene optionale Shots zählen nicht mit: Sie blockieren nichts
+  const shots = (b.shots || []).filter((s) => !istOptional(s) || s.erledigt);
   return {
     stationen, idx,
     nachholen: stationen.flatMap((s) => s.spaeter),
     gesamt: shots.length, erledigt: shots.filter((s) => s.erledigt).length,
+    optionalOffen: (b.shots || []).filter((s) => istOptional(s) && !s.erledigt),
   };
+}
+
+// ---------- Bereit für den Dreh? ----------
+// Ampel vor dem Dreh: rot = so fehlt etwas Wichtiges, orange = besser klären, grün = alles da.
+// Einzelne Punkte lassen sich ignorieren (drehtag.bereit.ignoriert), Packlisten-Posten einzeln (posten.ignoriert).
+export function bereitschaft(b) {
+  const t = b.drehtag;
+  const ignoriert = new Set(t.bereit?.ignoriert || []);
+  const shots = (b.shots || []).filter((s) => !istOptional(s));
+  const punkte = [];
+  const p = (id, stufe, text, ziel, extra = {}) => punkte.push({ id, stufe, text, ziel, ignoriert: ignoriert.has(id), ...extra });
+
+  if (!t.datum) p('datum', 'rot', 'Kein Drehdatum', 'bearbeiten');
+  if (!shots.length) p('shots', 'rot', 'Noch keine Shots', 'shots');
+  const ohneText = shots.filter((s) => ['hook', 'oton', 'cta'].includes(s.typ) && !(s.text || '').trim());
+  if (ohneText.length) p('text', 'rot', `${ohneText.length} ${ohneText.length === 1 ? 'Sprech-Shot' : 'Sprech-Shots'} ohne Text`, 'shots');
+  if (t.datum && !t.uhrzeit) p('uhrzeit', 'orange', 'Kein Drehbeginn', 'plan');
+  if ((b.locations || []).length) {
+    const ohneOrt = shots.filter((s) => !s.locationId);
+    if (ohneOrt.length) p('ort', 'orange', `${ohneOrt.length} ${ohneOrt.length === 1 ? 'Shot' : 'Shots'} ohne Location`, 'shots');
+  }
+  if (shots.length && !(t.zeitplan?.bloecke || []).length) p('zeitplan', 'orange', 'Noch kein Zeitplan', 'plan');
+  const offenFragen = (t.briefing?.fragen || []).filter((f) => !(f.antwort || '').trim());
+  if (offenFragen.length) p('briefing', 'orange', `${offenFragen.length} ${offenFragen.length === 1 ? 'Frage' : 'Fragen'} im Briefing offen`, 'briefing');
+  const pack = (t.packliste?.posten || []).filter((x) => !x.ok && !x.ignoriert);
+  if (pack.length) p('pack', 'orange', `${pack.length} ${pack.length === 1 ? 'Posten' : 'Posten'} noch nicht gepackt`, 'plan', { posten: pack });
+  const sonne = sonneVon(t);
+  if (sonne) {
+    const aussen = new Set((b.locations || []).filter((l) => l.aussen).map((l) => l.id));
+    const dunkel = zeitplanMitZeiten(t.uhrzeit, t.zeitplan?.bloecke).filter((x) => aussen.has(x.locationId) && /dunkel|mittendrin/.test(sonnenHinweis(sonne, x.von, x.bis)));
+    if (dunkel.length) p('sonne', 'orange', `Außen nach Sonnenuntergang: ${dunkel.map((x) => x.titel).join(', ')}`, 'plan');
+  }
+  const aktiv = punkte.filter((x) => !x.ignoriert);
+  const stufe = aktiv.some((x) => x.stufe === 'rot') ? 'rot' : aktiv.length ? 'orange' : 'gruen';
+  return { stufe, punkte, offen: aktiv.length };
+}
+
+// Was beim Abschließen eines Drehtags liegen geblieben ist
+export function abschlussStand(b) {
+  const shots = b.shots || [];
+  const pflicht = shots.filter((s) => !istOptional(s));
+  return {
+    gedreht: shots.filter((s) => s.erledigt).length,
+    gesamt: pflicht.length + shots.filter((s) => istOptional(s) && s.erledigt).length,
+    offen: pflicht.filter((s) => !s.erledigt),
+    optionalOffen: shots.filter((s) => istOptional(s) && !s.erledigt),
+  };
+}
+
+// Am Drehtag öffnet die App gleich den Roten Faden: ab einer Stunde vor Drehbeginn bis Mitternacht
+// (ohne Drehbeginn den ganzen Tag). Nicht bei Vorlagen, abgeschlossenen oder heute abgewählten Drehtagen.
+export function fadenAutoTag(tage, { jetzt = new Date(), aus = [] } = {}) {
+  const h = heute();
+  const min = jetzt.getHours() * 60 + jetzt.getMinutes();
+  return tage
+    .filter((t) => !t.vorlage && t.datum === h && !t.abgeschlossen && !aus.includes(t.id))
+    .filter((t) => !istZeit(t.uhrzeit) || min >= inMin(t.uhrzeit) - 60)
+    .sort((a, b) => (a.uhrzeit || '').localeCompare(b.uhrzeit || ''))[0] || null;
 }
 
 // Liegen wir in der Zeit? Nur am Drehtag selbst und nur mit Uhrzeiten im Zeitplan.
@@ -327,6 +394,84 @@ export function ablaufVorschlag(b) {
   bloecke.push({ id: neueId(), titel: 'Abbau', dauer: 15, locationId: '', hinweis: '' });
   return bloecke;
 }
+
+// ---------- Sprachnotiz einsortieren (Claude) ----------
+// Das Transkript der Sprachnotiz nach dem Erstgespräch wird von Claude in Briefing-Antworten,
+// Videos und Shot-Vorschläge verteilt. Hier nur Anfrage und Schema; den Aufruf macht die App.
+
+export const SORTIER_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['antworten', 'weitere_infos', 'videos', 'shots', 'offene_punkte'],
+  properties: {
+    antworten: {
+      type: 'array', description: 'Antworten auf vorhandene Fragen, nur wenn in der Notiz etwas dazu gesagt wurde',
+      items: { type: 'object', additionalProperties: false, required: ['frage_id', 'antwort'],
+        properties: { frage_id: { type: 'string' }, antwort: { type: 'string' } } },
+    },
+    weitere_infos: {
+      type: 'array', description: 'Wichtiges, das zu keiner vorhandenen Frage passt, als kurze Frage mit Antwort',
+      items: { type: 'object', additionalProperties: false, required: ['frage', 'antwort'],
+        properties: { frage: { type: 'string' }, antwort: { type: 'string' } } },
+    },
+    videos: {
+      type: 'array', description: 'Reels, die in der Notiz besprochen werden (neu oder vorhandene mit gleichem Namen)',
+      items: { type: 'object', additionalProperties: false, required: ['name', 'notiz'],
+        properties: { name: { type: 'string' }, notiz: { type: 'string', description: 'Ziel, Plattform, Länge, CTA – soweit gesagt' } } },
+    },
+    shots: {
+      type: 'array', description: 'Shot-Vorschläge je Video',
+      items: { type: 'object', additionalProperties: false, required: ['typ', 'text', 'titel', 'video', 'location', 'notiz'],
+        properties: {
+          typ: { type: 'string', enum: ['hook', 'oton', 'broll', 'cta', 'sonst'] },
+          text: { type: 'string', description: 'Sprechtext bei Hook, O-Ton/Skript (auch Leitfragen), CTA; sonst leer' },
+          titel: { type: 'string', description: 'Kurzname; bei B-Roll die Bildbeschreibung' },
+          video: { type: 'string', description: 'Name des Videos aus "videos"' },
+          location: { type: 'string', description: 'Raum oder Ort, wenn bekannt, sonst leer' },
+          notiz: { type: 'string', description: 'Regie oder Bildidee, sonst leer' },
+        } },
+    },
+    offene_punkte: { type: 'array', description: 'Was fehlt, unklar ist oder geklärt werden muss', items: { type: 'string' } },
+  },
+};
+
+export const SORTIER_SYSTEM = `Du hilfst Ulf (LensMOGic, Video- und Fotoproduktion, vor allem Reels für Immobilienmakler), einen Drehtag vorzubereiten.
+Ulf hat nach dem Telefonat mit dem Kunden eine Sprachnotiz eingesprochen. Du bekommst das automatische Transkript (Whisper, kann Hörfehler bei Namen, Straßen und Zahlen enthalten), die Fragen des Erstgesprächs mit ihren Kennungen und was im Drehtag schon angelegt ist.
+
+Aufgabe: Verteile den Inhalt der Notiz.
+- antworten: zu jeder Frage, zu der in der Notiz etwas gesagt wird, die Antwort knapp in Ulfs Worten. Fragen ohne Aussage weglassen.
+- weitere_infos: Wichtiges, das zu keiner Frage passt.
+- videos und shots: Reel-Ideen und Shot-Vorschläge, soweit die Notiz sie hergibt. Hooks in 2–3 Varianten pro Video, wenn das Material genug hergibt; die Formulierung darf zugespitzt sein, jede Tatsache darin muss aus der Notiz stammen. B-Roll nur mit Bildern, die es laut Notiz gibt. CTA nur, wenn ein Ziel genannt wird. Vorhandene Videos und Locations mit genau ihrem Namen ansprechen.
+- offene_punkte: was fehlt oder unklar ist und geklärt werden sollte, auch unsichere Hörstellen.
+
+Regeln:
+- Nichts erfinden: keine Zahlen, Preise, Flächen, Namen, Ausstattung oder Abläufe, die nicht gesagt wurden. Lieber ein offener Punkt als eine Vermutung.
+- Hörfehler nicht stillschweigend korrigieren, wenn das richtige Wort nicht sicher ist; dann als offenen Punkt nennen.
+- Wenn der Kunde gebeten hat, etwas wegzulassen, kommt es nirgends vor. Heikle Aussagen über Dritte nicht in Hooks oder Shots.
+- Alles auf Deutsch. Leere Listen sind in Ordnung.`;
+
+// Inhalt der Anfrage: Drehtag, Fragen mit Kennung, Vorhandenes, Transkript
+export function sortierInhalt(b, transkript) {
+  const t = b.drehtag;
+  const z = [`Drehtag: ${t.kunde}${t.datum ? `, ${fmtDatum(t.datum)}` : ''}${t.ort ? `, ${t.ort}` : ''}`];
+  if (t.notizen) z.push(`Notizen: ${eineZeile(t.notizen)}`);
+  z.push('', 'Fragen des Erstgesprächs (Kennung | Frage | bisherige Antwort):');
+  for (const f of t.briefing?.fragen || []) z.push(`- ${f.id} | ${f.frage} | ${eineZeile(f.antwort || '') || '–'}`);
+  const namen = (liste) => (liste || []).map((x) => x.name).filter(Boolean).join(', ') || '–';
+  z.push('', `Vorhandene Videos: ${namen(b.videos)}`, `Vorhandene Locations: ${namen(b.locations)}`);
+  const vorhanden = (b.shots || []).filter((s) => s.text || s.titel).slice(0, 60);
+  if (vorhanden.length) {
+    z.push('', 'Schon angelegte Shots (nicht doppelt vorschlagen):');
+    for (const s of vorhanden) z.push(`- ${typVon(s.typ).kurz}: ${eineZeile(shotName(s))}`);
+  }
+  z.push('', 'Transkript der Sprachnotiz:', transkript.trim());
+  return z.join('\n');
+}
+
+// Hilfswörter für Whisper: Namen und Orte aus dem Drehtag verbessern die Erkennung
+export const whisperHinweis = (b) =>
+  [b.drehtag.kunde, b.drehtag.ort, b.drehtag.ansprechpartner, ...(b.locations || []).map((l) => l.name), 'Reel, Hook, B-Roll, Makler']
+    .filter(Boolean).join(', ').slice(0, 400);
 
 // ---------- Sonnenstand ----------
 // Rechnet ohne Internet aus Koordinaten und Datum: Aufgang, Untergang, Goldene und Blaue Stunde.
@@ -576,11 +721,20 @@ export function icsText(b) {
   }
   z.push(`SUMMARY:${esc('Dreh: ' + tag.kunde)}`);
   if (tag.ort) z.push(`LOCATION:${esc(tag.ort)}`);
+  const offenPack = (tag.packliste?.posten || []).filter((p) => !p.ok && !p.ignoriert).map((p) => p.name);
   const beschreibung = [
     tag.ansprechpartner ? `Kontakt: ${tag.ansprechpartner}${tag.telefon ? ' (' + tag.telefon + ')' : ''}` : '',
     tag.notizen,
+    offenPack.length ? `Noch packen: ${offenPack.join(', ')}` : '',
   ].filter(Boolean).join('\n');
   if (beschreibung) z.push(`DESCRIPTION:${esc(beschreibung)}`);
+  // Erinnerungen: am Vorabend um 18 Uhr und (mit Drehbeginn) eine Stunde vorher
+  const vorabend = new Date(tag.datum + 'T18:00');
+  vorabend.setDate(vorabend.getDate() - 1);
+  const utc = vorabend.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  z.push('BEGIN:VALARM', 'ACTION:DISPLAY', `TRIGGER;VALUE=DATE-TIME:${utc}`,
+    `DESCRIPTION:${esc(`Morgen Dreh: ${tag.kunde}. Akkus laden, Karten leeren${offenPack.length ? ', Packliste prüfen' : ''}.`)}`, 'END:VALARM');
+  if (istZeit(tag.uhrzeit)) z.push('BEGIN:VALARM', 'ACTION:DISPLAY', 'TRIGGER:-PT1H', `DESCRIPTION:${esc(`In einer Stunde: Dreh ${tag.kunde}`)}`, 'END:VALARM');
   z.push('END:VEVENT', 'END:VCALENDAR');
   return z.join('\r\n');
 }
@@ -625,6 +779,7 @@ export function kopieAlsNeu(b) {
   const videos = (b.videos || []).map((v) => ({ ...v, id: neu(v.id), drehtagId: tag.id, geaendert: jetzt }));
   const shots = (b.shots || []).map((s) => ({
     ...s, id: neueId(), drehtagId: tag.id, locationId: um(s.locationId), videoId: um(s.videoId),
+    auchAn: (s.auchAn || []).map(um).filter(Boolean),
     erledigt: false, favorit: false, take: '', clips: [], spaeter: false, erledigtUm: 0, geaendert: jetzt,
   }));
   if (tag.briefing) tag.briefing = { geaendert: jetzt, fragen: tag.briefing.fragen.map((f) => ({ ...f, id: neueId(), antwort: '' })) };
@@ -652,7 +807,7 @@ export function kopieAlsNeu(b) {
 // gewinnt pro Eintrag die jüngere Fassung. Gelöschtes bleibt gelöscht.
 
 export const stempel = (r) => r?.geaendert || r?.erstellt || 0;
-const TEILE = ['briefing', 'zeitplan', 'packliste', 'faden', 'settings'];
+const TEILE = ['briefing', 'zeitplan', 'packliste', 'faden', 'settings', 'bereit'];
 
 // Der Drehtag selbst hat vier Teile mit eigenem Zeitstempel: die Grunddaten,
 // das Briefing, den Zeitplan und die Packliste. Jeder Teil wird einzeln verglichen.
