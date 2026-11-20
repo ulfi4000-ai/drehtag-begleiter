@@ -304,9 +304,11 @@ async function auswerten(medienId, { sortieren }) {
   }
 }
 
-// Ist ein Teleprompter-Gerät gekoppelt, bekommt es den Sprechtext des nächsten Shots von selbst
+// Ist ein Teleprompter-Gerät gekoppelt, bekommt es den Sprechtext des nächsten Shots von selbst.
+// Liegt dort gerade der Location-Prompter (alle Texte der Station), bleibt der stehen.
+let sammelAufGeraet = false;
 async function prompterNachziehen(shot) {
-  if (!gekoppelt() || !['hook', 'oton', 'cta'].includes(shot.typ) || !(shot.text || '').trim()) return;
+  if (!gekoppelt() || sammelAufGeraet || !['hook', 'oton', 'cta'].includes(shot.typ) || !(shot.text || '').trim()) return;
   if (await textSenden(M.shotName(shot), shot.text)) toast('Text liegt auf dem Teleprompter');
 }
 
@@ -349,6 +351,15 @@ async function shotHolen(id) {
 async function buendelHolen(id) {
   await allesGespeichert();
   return db.buendel(id);
+}
+
+// Location-Prompter: alle Sprechtexte einer Station (Faden: data-key, Location-Seite: data-ort)
+async function stationText(tagId, el) {
+  const b = await buendelHolen(tagId);
+  const st = M.fadenStationen(b).find((x) => (el.dataset.key ? x.key === el.dataset.key : x.locationId === el.dataset.ort));
+  const shots = st ? M.stationSprechtexte(st) : [];
+  if (!shots.length) { toast('Hier gibt es keine Sprechtexte'); return null; }
+  return { titel: `${st.titel} · ${anzahl(shots.length, 'Text', 'Texte')}`, text: M.prompterBlock(shots, b.videos) };
 }
 
 // Tauscht den Platz mit dem Nachbarn in der Liste
@@ -911,10 +922,24 @@ const aktionen = {
     const s = await shotHolen(id);
     // Gekoppeltes Teleprompter-Gerät? Dann dorthin, und hier die Fernsteuerung zeigen
     if (gekoppelt()) {
-      if (await textSenden(M.shotName(s), s.text)) { steuerungZeigen(); return; }
+      if (await textSenden(M.shotName(s), s.text)) { sammelAufGeraet = false; steuerungZeigen(); return; }
       toast('Teleprompter-Gerät nicht erreichbar, zeige den Text hier');
     }
     openPrompter(M.shotName(s), s.text);
+  },
+  // Location-Prompter: alle Sprechtexte der Station am Stück
+  async 'prompt-station'(tagId, el) {
+    const t = await stationText(tagId, el);
+    if (!t) return;
+    if (gekoppelt()) {
+      if (await textSenden(t.titel, t.text)) { sammelAufGeraet = true; steuerungZeigen(); return; }
+      toast('Teleprompter-Gerät nicht erreichbar, zeige den Text hier');
+    }
+    openPrompter(t.titel, t.text);
+  },
+  async 'share-station'(tagId, el) {
+    const t = await stationText(tagId, el);
+    if (t) teilenMeldung(await shareText(t.titel, t.text), 'Der Text');
   },
   koppeln: () => koppelnZeigen(render),
 

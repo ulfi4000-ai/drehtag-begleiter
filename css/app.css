@@ -457,6 +457,8 @@ button.fab { border: 0; font: inherit; font-weight: 700; font-size: 17px; cursor
 }
 .faden-next small { color: var(--mute); font-size: 12px; }
 .faden-rest { width: 100%; margin-top: 12px; }
+.sammel { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+.sammel .btn-row { margin-top: 6px; }
 .faden-fertig { border-left-color: var(--ok); text-align: center; display: grid; gap: 12px; }
 
 /* Klappe: Nummer groß, Handy in die Kamera halten */

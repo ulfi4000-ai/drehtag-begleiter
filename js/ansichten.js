@@ -7,6 +7,7 @@ import {
   videoStand, videoStandText, zeitplanMitZeiten, zeitplanMinuten,
   fadenStand, fadenZeit, SCHAETZUNG, SETTING_FELDER, settingsVon, settingVon, settingKurz,
   sonnenText, sonneVon, sonnenHinweis, uhrAusMin, istOptional, moeglicheOrte, bereitschaft,
+  istSprech, stationSprechtexte,
 } from './modell.js';
 import { z, bildUrl, nachPos, anzahl, statsText, folienText, istLang, platzhalter, woerter } from './zustand.js';
 import { fernbedienungKarte } from './fernbedienung.js';
@@ -821,8 +822,21 @@ export async function viewOrt(id) {
       <section class="card ort-card">
         <div class="kopfzeile"><h2>Shots an dieser Location</h2><span class="mute">${shots.filter((s) => s.erledigt).length}/${shots.length}</span></div>
         ${shots.length ? ortShots(shots, { locations: [ort], videos, medien: [], settings: settingsVon(tag) }) : '<p class="mute">Noch keine Shots. In der Shotliste beim Anlegen diese Location wählen.</p>'}
+        ${shots.some(istSprech) ? sammelKnoepfe(`data-id="${tag.id}" data-ort="${id}"`) : ''}
       </section>
     </main>`;
+}
+
+// Location-Prompter: alle Sprechtexte hier am Stück, eigener Prompter oder andere Teleprompter-App
+function sammelKnoepfe(daten, anzahlTexte) {
+  return `
+    <div class="sammel">
+      <p class="mute">Alle Sprechtexte hier am Stück${anzahlTexte ? ` (${anzahlTexte})` : ''}</p>
+      <div class="btn-row">
+        <button class="btn" data-action="prompt-station" ${daten}>${gekoppelt() ? '▶ Alle auf 2. Gerät' : '▶ Location-Prompter'}</button>
+        <button class="btn" data-action="share-station" ${daten}>An Teleprompter-App</button>
+      </div>
+    </div>`;
 }
 
 function listeShots(shots, videos = []) {
@@ -1052,6 +1066,7 @@ export async function viewFaden(id) {
       </div>
       ${fadenListe(nachholModus ? nachholen : st.shots, shot, videoVon, nachholModus, (s) => settingVon(tag, s.settingId)?.name || '')}
       ${optionalListe(optionalHier.filter((s) => s.id !== shot.id), videoVon, (s) => moeglicheOrte(s).filter((o) => o !== st?.locationId).map((o) => b.locations.find((l) => l.id === o)?.name).filter(Boolean))}
+      ${!nachholModus && stationSprechtexte(st).length > 1 ? sammelKnoepfe(`data-id="${tag.id}" data-key="${esc(st.key)}"`, stationSprechtexte(st).length) : ''}
       ${!nachholModus && danach.length ? `<button class="btn faden-rest" data-action="faden-rest-spaeter" data-id="${tag.id}" data-key="${esc(st.key)}">Station verlassen, Rest später</button>` : ''}`;
   }
 

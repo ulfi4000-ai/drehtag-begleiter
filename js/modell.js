@@ -563,6 +563,25 @@ export function sonnenHinweis(s, von, bis) {
   return '';
 }
 
+// ---------- Location-Prompter ----------
+// Alle Sprechtexte einer Station als ein Text: für den eigenen Teleprompter, das zweite Gerät
+// oder eine andere Teleprompter-App. Abgehakte fallen weg; ist schon alles erledigt, kommen alle.
+export const istSprech = (s) => ['hook', 'oton', 'cta'].includes(s.typ) && !!(s.text || '').trim();
+
+export function stationSprechtexte(st) {
+  const alle = [...st.shots, ...(st.optional || [])].filter(istSprech);
+  const offen = alle.filter((s) => !s.erledigt);
+  return offen.length ? offen : alle;
+}
+
+export function prompterBlock(shots, videos = []) {
+  return shots.map((s, i) => {
+    const video = videos.find((v) => v.id === s.videoId);
+    const kopf = [`[${i + 1}/${shots.length}] ${typVon(s.typ).kurz}`, video?.name, istOptional(s) ? 'optional' : ''].filter(Boolean).join(' · ');
+    return `${kopf}\n${s.text.trim()}`;
+  }).join('\n\n\n');
+}
+
 // ---------- Texte zum Teilen ----------
 // "b" ist immer ein Bündel: { drehtag, locations, videos, shots }
 
