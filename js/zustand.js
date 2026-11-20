@@ -18,6 +18,7 @@ export const z = {
   fadenAuto: '',             // Drehtag, dessen Faden beim Start automatisch geöffnet wurde
   fadenZuletzt: '',          // zuletzt abgehakter Shot (für "Rückgängig")
   fadenModus: '',            // 'nachholen', wenn die zurückgestellten Shots dran sind
+  pflichtOffen: '',          // Drehtag, dessen Pflicht-Liste im Faden aufgeklappt ist
 };
 
 // Bild-Adressen der aktuellen Ansicht. Beim Wechsel der Ansicht werden die alten freigegeben.
@@ -51,7 +52,7 @@ export const istLang = (t) => (t || '').length > 220 || ((t || '').match(/\n/g) 
 // Bei Hook und CTA ist das Eingetippte der Sprechtext, sonst der Titel
 export const istSpruch = (typ) => typ === 'hook' || typ === 'cta';
 export const platzhalter = (typ) =>
-  typ === 'hook' ? 'Hook-Text …' : typ === 'cta' ? 'CTA-Text …' : typ === 'karussell' ? 'Thema des Karussells …' : 'Neuer Shot …';
+  typ === 'hook' ? 'Hook-Text …' : typ === 'cta' ? 'CTA-Text …' : typ === 'karussell' ? 'Thema des Karussells …' : typ === 'interview' ? 'Name der Person …' : 'Neuer Shot …';
 // Karussell: eine Folie pro Zeile
 export const folien = (t) => (t || '').split('\n').filter((z) => z.trim()).length;
 export const folienText = (t) => `${folien(t)} ${folien(t) === 1 ? 'Folie' : 'Folien'} · eine Folie pro Zeile`;

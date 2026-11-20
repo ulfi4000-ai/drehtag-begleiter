@@ -4,7 +4,7 @@ import { esc, showOverlay } from './util.js';
 const KEY = 'prompter-einstellungen';
 const laden = () => ({ tempo: 60, groesse: 40, spiegeln: false, ...JSON.parse(localStorage.getItem(KEY) || '{}') });
 
-export function openPrompter(titel, text) {
+export function openPrompter(titel, text, { beiMarker = null } = {}) {
   const s = laden();
   let laeuft = false;
   let pos = 0;         // Scroll-Position in Pixeln, mit Nachkommastellen
@@ -23,6 +23,7 @@ export function openPrompter(titel, text) {
           <button data-p="close" aria-label="Schließen">✕</button>
           <button data-p="top">Anfang</button>
           <button data-p="mirror">Spiegeln</button>
+          ${beiMarker ? '<button data-p="marker" aria-label="Marker setzen">⚑</button>' : ''}
           <button data-p="play" class="p-play">Start</button>
         </div>
         <div class="p-row">
@@ -121,6 +122,7 @@ export function openPrompter(titel, text) {
     }
     switch (b.dataset.p) {
       case 'close': o.close(); break;
+      case 'marker': beiMarker?.(); break;
       case 'play': umschalten(); break;
       case 'top': stopp(); sc.scrollTop = 0; pos = 0; break;
       case 'mirror': s.spiegeln = !s.spiegeln; break;

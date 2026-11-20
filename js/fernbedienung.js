@@ -3,6 +3,7 @@
 // Bild ab, Pfeil runter oder Leertaste. Die App hört darauf:
 //   Roter Faden:  "Weiter" = aktuellen Shot erledigen,  "Zurück" = letzten Haken rückgängig
 //   Teleprompter: "Weiter" = Start/Pause,               "Zurück" = ein Stück zurück
+//   Marker (nur wenn angelernt): merkt sich die Uhrzeit, „Das war gut“
 // Welche Taste was ist, lässt sich unter „Sicherung“ anlernen. Gespeichert nur auf diesem Gerät.
 import { esc, toast } from './util.js';
 
@@ -23,12 +24,13 @@ function bedeutung(name) {
   const g = laden();
   if (g.weiter === name) return 'weiter';
   if (g.zurueck === name) return 'zurueck';
+  if (g.marker === name) return 'marker';
   if (STANDARD.weiter.includes(name)) return 'weiter';
   if (STANDARD.zurueck.includes(name)) return 'zurueck';
   return null;
 }
 
-let lernen = null;   // 'weiter' | 'zurueck' während des Anlernens
+let lernen = null;   // 'weiter' | 'zurueck' | 'marker' während des Anlernens
 let letzteTaste = '–';
 let gesperrt = 0;    // gegen doppelte Auslösung (Prellen, gedrückt halten)
 
@@ -49,10 +51,10 @@ function beiTaste(e) {
   if (lernen) {
     e.preventDefault();
     const g = laden();
+    for (const k of ['weiter', 'zurueck', 'marker']) if (g[k] === name) delete g[k]; // eine Taste, eine Bedeutung
     g[lernen] = name;
-    if (g[lernen === 'weiter' ? 'zurueck' : 'weiter'] === name) delete g[lernen === 'weiter' ? 'zurueck' : 'weiter'];
     speichern(g);
-    toast(`${anzeige(name)} = ${lernen === 'weiter' ? 'Erledigt / Weiter' : 'Zurück'}`);
+    toast(`${anzeige(name)} = ${{ weiter: 'Erledigt / Weiter', zurueck: 'Zurück', marker: 'Marker' }[lernen]}`);
     lernen = null;
     karteAuffrischen();
     return;
@@ -73,6 +75,12 @@ function beiTaste(e) {
   if (Date.now() < gesperrt) return;
   gesperrt = Date.now() + 600;
 
+  if (was === 'marker') {
+    if (fern) klicken('#overlay [data-fp="marker"]');
+    else if (prompter) klicken('#overlay [data-p="marker"]');
+    else klicken('[data-action="marker"]');
+    return;
+  }
   if (fern) {
     klicken(was === 'weiter' ? '#overlay [data-fp="umschalten"]' : '#overlay [data-fp="zurueck"]');
     return;
@@ -94,15 +102,17 @@ export function fernbedienungKarte() {
   return `
     <section class="card" id="fb-karte">
       <h2>Fernbedienung</h2>
-      <p class="mute" style="margin-bottom:10px">Bluetooth-Fernbedienung mit dem Handy koppeln. Im Roten Faden erledigt „Weiter“ den aktuellen Shot, „Zurück“ nimmt den letzten Haken zurück. Im Teleprompter: Start/Pause und ein Stück zurück.</p>
+      <p class="mute" style="margin-bottom:10px">Bluetooth-Fernbedienung mit dem Handy koppeln. Im Roten Faden erledigt „Weiter“ den aktuellen Shot, „Zurück“ nimmt den letzten Haken zurück. Im Teleprompter: Start/Pause und ein Stück zurück. Eine dritte Taste kann Marker setzen („Das war gut“).</p>
       <div class="info-row"><span>Zuletzt gedrückt</span><b id="fb-zuletzt">${esc(letzteTaste)}</b></div>
       ${zeile('weiter', 'Weiter')}
       ${zeile('zurueck', 'Zurück')}
+      <div class="info-row"><span>Marker</span><b>${g.marker ? esc(anzeige(g.marker)) + ' (angelernt)' : 'keine Taste'}</b></div>
       <div class="row2" style="margin-top:10px">
         <button class="btn" data-fb="weiter">${lernen === 'weiter' ? 'Jetzt Taste drücken …' : 'Weiter anlernen'}</button>
         <button class="btn" data-fb="zurueck">${lernen === 'zurueck' ? 'Jetzt Taste drücken …' : 'Zurück anlernen'}</button>
       </div>
-      ${g.weiter || g.zurueck ? '<button class="btn" style="width:100%;margin-top:8px" data-fb="reset">Auf Standard zurücksetzen</button>' : ''}
+      <button class="btn" style="width:100%;margin-top:8px" data-fb="marker">${lernen === 'marker' ? 'Jetzt Taste drücken …' : 'Marker-Taste anlernen'}</button>
+      ${g.weiter || g.zurueck || g.marker ? '<button class="btn" style="width:100%;margin-top:8px" data-fb="reset">Auf Standard zurücksetzen</button>' : ''}
     </section>`;
 }
 

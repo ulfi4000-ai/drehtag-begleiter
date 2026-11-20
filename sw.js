@@ -1,10 +1,10 @@
 // Service Worker: hält eine Kopie der App-Dateien im Handy vor.
 // Mit Netz kommt immer die neueste Fassung, ohne Netz die gespeicherte.
-const CACHE = 'drehtag-v16';
+const CACHE = 'drehtag-v17';
 const DATEIEN = [
   './', 'index.html', 'css/app.css',
   'js/app.js', 'js/modell.js', 'js/db.js', 'js/zustand.js', 'js/ansichten.js', 'js/aktionen.js',
-  'js/dateien.js', 'js/util.js', 'js/sketch.js', 'js/prompter.js', 'js/aufnahme.js', 'js/fernbedienung.js', 'js/nativ.js', 'js/kopplung.js', 'js/sync.js',
+  'js/dateien.js', 'js/util.js', 'js/sketch.js', 'js/prompter.js', 'js/aufnahme.js', 'js/fernbedienung.js', 'js/nativ.js', 'js/kopplung.js', 'js/sync.js', 'js/unterschrift.js', 'js/wetter.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
 ];
 

@@ -11,7 +11,7 @@ import * as db from './db.js';
 import * as M from './modell.js';
 import { z, urlsWechseln } from './zustand.js';
 import * as A from './ansichten.js';
-import { init, wachsen, sucheFuellen, einlesen } from './aktionen.js';
+import { init, wachsen, sucheFuellen, einlesen, vorlagenSicherstellen } from './aktionen.js';
 import { initFernbedienung } from './fernbedienung.js';
 import { initNativ, istNativ } from './nativ.js';
 import { toast } from './util.js';
@@ -103,7 +103,9 @@ init(render);
 initFernbedienung();
 initNativ({ einlesen, toast });
 window.addEventListener('hashchange', render);
-fadenAutoOeffnen().finally(render);
+// Im Hintergrund nachgeladene Daten (z. B. Wetter): neu zeichnen, wenn gerade keine Ebene offen ist
+window.addEventListener('daten-neu', () => { if (document.getElementById('overlay').hidden) render(); });
+vorlagenSicherstellen().catch(console.error).finally(() => fadenAutoOeffnen().finally(render));
 
 // Service Worker: macht die App offline nutzbar
 // (In der Android-App liegen die Dateien ohnehin auf dem Gerät, dort braucht es ihn nicht.)

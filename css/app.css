@@ -573,3 +573,50 @@ button.fab { border: 0; font: inherit; font-weight: 700; font-size: 17px; cursor
 .fern-prompter .fp-reihe .btn { flex: 1; }
 .fern-prompter .fp-wert { min-width: 40px; text-align: center; font-weight: 700; }
 .faden-neben .btn.an { border-color: var(--ok); color: var(--ok); }
+
+/* ---------- Event: feste Programmpunkte, Pflicht-Shots, Marker ---------- */
+.typ-interview, .tag-interview { --typ: #B0367A; }
+.pflicht { color: var(--rot); font-size: 12px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; }
+.haken3 { display: grid; grid-template-columns: repeat(3, auto); justify-content: space-between; gap: 8px; }
+.haken3 .check-row { gap: 6px; font-size: 16px !important; white-space: nowrap; }
+.block-zeit.fest { width: 56px; }
+.fest-zeile { display: flex !important; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; font-size: 13px !important; color: var(--mute) !important; }
+.fest-zeile input { width: 120px; flex: none; }
+.zeit-zeile { display: grid; grid-template-columns: 1fr 120px auto; align-items: center; gap: 8px; }
+.zeit-zeile span { font-size: 15px; }
+.faden-gleich { margin: 6px 0; padding: 8px 10px; border-radius: 10px; border: 1px solid #E8890C; font-size: 14px; }
+.faden-gleich button { margin-left: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid #E8890C; background: none; color: inherit; font: inherit; }
+.pflicht-leiste { margin: 8px 0; border: 1px solid var(--line); border-left: 4px solid var(--rot); border-radius: 12px; background: var(--card); }
+.pflicht-leiste.alle { border-left-color: var(--ok); }
+.pflicht-kopf { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 12px; border: 0; background: none; color: var(--text); font: inherit; cursor: pointer; }
+.pflicht-leiste .shots { margin: 0 8px 8px; }
+.marker-knopf { min-width: 44px; font-size: 18px; }
+.fragen-liste { margin: 10px 0 4px; padding-left: 24px; display: grid; gap: 6px; }
+.fragen-liste button { width: 100%; padding: 6px 4px; border: 0; background: none; color: var(--text); font: inherit; font-size: 19px; line-height: 1.35; text-align: left; cursor: pointer; }
+.fragen-liste button.ok { color: var(--mute); text-decoration: line-through; font-weight: 400; }
+.einverstaendnis-knopf { width: 100%; margin-top: 10px; }
+.einverstaendnis-knopf.an { border-color: var(--ok); color: var(--ok); }
+.unterschrift-bild { display: block; max-width: 100%; max-height: 160px; margin: 8px 0; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.freigabe-zeile { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.warn-hinweis { color: #b25e00; border: 1px solid #E8890C; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.warn-text { color: #b25e00; }
+.abbau { margin: 6px 0 10px; }
+.abbau summary { cursor: pointer; padding: 6px 0; font-weight: 600; }
+.abbau .check-row { font-size: 15px !important; padding: 4px 0; }
+
+/* Unterschrift */
+.unterschrift { position: absolute; inset: 0; display: flex; flex-direction: column; background: #f3f3f1; color: #141414; }
+.u-text { flex: 1 1 auto; min-height: 80px; overflow: auto; padding: 16px; padding-top: calc(16px + env(safe-area-inset-top)); font-size: 15px; line-height: 1.45; white-space: pre-wrap; }
+.u-name { display: grid; gap: 4px; padding: 0 16px 8px; font-size: 14px; color: #555; }
+.u-name input { font-size: 17px; padding: 10px; border: 1px solid #ccc; border-radius: 10px; background: #fff; color: #141414; }
+.u-flaeche { position: relative; flex: none; height: 200px; margin: 0 16px 10px; border: 2px dashed #999; border-radius: 12px; background: #fff; overflow: hidden; }
+.u-flaeche canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+.u-linie { position: absolute; left: 16px; right: 16px; bottom: 36px; border-top: 1px solid #bbb; padding-top: 4px; font-size: 12px; color: #999; pointer-events: none; }
+.unterschrift .s-bar { background: #222; }
+.s-bar button:disabled { opacity: .45; }
+.vorlage-zeile { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.vorlage-zeile + .vorlage-zeile { border-top: 1px solid var(--line); }
+.vorlage-zeile a { flex: 1; min-width: 0; display: grid; color: var(--text); text-decoration: none; }
+.vorlage-zeile a b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vorlage-zeile .mute { font-size: 13px; }
+.vorlage-zeile .btn { flex: none; min-height: 40px; padding: 0 14px; }

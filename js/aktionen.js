@@ -5,7 +5,9 @@ import { esc, toast, showOverlay } from './util.js';
 import * as M from './modell.js';
 import { z, einreihen, allesGespeichert, nachPos, anzahl, statsText, folienText, istSpruch, platzhalter } from './zustand.js';
 import { copyText, shareText, dateiTeilen, herunterladen, drehtagDatei, exportBackup, importDatei, slug } from './dateien.js';
-import { sucheHtml, zeitplanBlatt } from './ansichten.js';
+import { sucheHtml, zeitplanBlatt, einverstaendnisBlatt } from './ansichten.js';
+import { openUnterschrift } from './unterschrift.js';
+import { wetterVon } from './wetter.js';
 import { openSketch } from './sketch.js';
 import { openPrompter } from './prompter.js';
 import { sprachnotizAufnehmen } from './aufnahme.js';
@@ -24,6 +26,8 @@ const LEER = {
   faden: () => ({ reihenfolge: 'video', fertig: [], aktiv: '' }),
   settings: () => ({ liste: [] }),
   bereit: () => ({ ignoriert: [] }),
+  marker: () => ({ liste: [] }),
+  zeiten: () => ({}),
 };
 function aendereTag(id, teil, fn) {
   return einreihen(async () => {
@@ -122,6 +126,10 @@ function speichern(el) {
       return aendereTag(tag, 'settings', (s) => { const x = s.liste.find((y) => y.id === id); if (x) x[el.name] = wert; });
     case 'meta':
       return einreihen(() => db.setMeta(id, wert));
+    case 'meta-startpunkt':
+      return einreihen(() => db.setMeta('startpunkt', { koordinaten: wert }));
+    case 'zeiten':
+      return aendereTag(id, 'zeiten', (x) => { x[el.name] = wert; });
   }
   return allesGespeichert();
 }
@@ -351,6 +359,38 @@ async function shotHolen(id) {
 async function buendelHolen(id) {
   await allesGespeichert();
   return db.buendel(id);
+}
+
+// ---------- Marker ----------
+// Ein Tipp (oder die angelernte Taste der Fernbedienung) merkt sich die Uhrzeit: „Das war gut“.
+// Station und aktueller Shot kommen zur Orientierung mit; Claude ordnet später die Clips über die Zeit zu.
+async function markerSetzen(tagId) {
+  const b = await db.buendel(tagId);
+  if (!b) return;
+  const stand = M.fadenStand(b);
+  const st = stand.stationen[stand.idx];
+  const shot = b.shots.find((s) => s.id === z.fadenShot && !s.erledigt) || st?.offen[0] || null;
+  const m = { id: db.uid(), zeit: Date.now(), station: st?.titel || '', shot: shot ? M.shotName(shot) : '' };
+  await aendereTag(tagId, 'marker', (x) => { x.liste.push(m); });
+  navigator.vibrate?.([40, 60, 40]);
+  const anzahlMarker = (b.drehtag.marker?.liste?.length || 0) + 1;
+  toast(`⚑ Marker ${M.uhrzeitVon(m.zeit, true)} (${anzahlMarker}.)`, {
+    knopf: 'Rückgängig',
+    beiKnopf: async () => { await aendereTag(tagId, 'marker', (x) => { x.liste = x.liste.filter((y) => y.id !== m.id); }); render(); },
+  });
+  if (location.hash.startsWith('#/faden/')) render();
+}
+
+const jetztHHMM = () => M.uhrzeitVon(Date.now());
+
+// Mitgelieferte Vorlagen beim ersten Start anlegen. Gelöschte kommen nicht von selbst zurück,
+// nur über „Sicherung“ › „wiederherstellen“.
+export async function vorlagenSicherstellen() {
+  const angelegt = (await db.getMeta('vorlagenAngelegt')) || [];
+  const neu = M.MITGELIEFERT.filter((v) => !angelegt.includes(v.key));
+  if (!neu.length) return;
+  for (const v of neu) await db.buendelSchreiben(M.vorlageBuendel(v));
+  await db.setMeta('vorlagenAngelegt', [...angelegt, ...neu.map((v) => v.key)]);
 }
 
 // Location-Prompter: alle Sprechtexte einer Station (Faden: data-key, Location-Seite: data-ort)
@@ -920,22 +960,24 @@ const aktionen = {
   },
   async 'prompt-text'(id) {
     const s = await shotHolen(id);
+    const beiMarker = () => markerSetzen(s.drehtagId);
     // Gekoppeltes Teleprompter-Gerät? Dann dorthin, und hier die Fernsteuerung zeigen
     if (gekoppelt()) {
-      if (await textSenden(M.shotName(s), s.text)) { sammelAufGeraet = false; steuerungZeigen(); return; }
+      if (await textSenden(M.shotName(s), s.text)) { sammelAufGeraet = false; steuerungZeigen({ beiMarker }); return; }
       toast('Teleprompter-Gerät nicht erreichbar, zeige den Text hier');
     }
-    openPrompter(M.shotName(s), s.text);
+    openPrompter(M.shotName(s), s.text, { beiMarker });
   },
   // Location-Prompter: alle Sprechtexte der Station am Stück
   async 'prompt-station'(tagId, el) {
     const t = await stationText(tagId, el);
     if (!t) return;
+    const beiMarker = () => markerSetzen(tagId);
     if (gekoppelt()) {
-      if (await textSenden(t.titel, t.text)) { sammelAufGeraet = true; steuerungZeigen(); return; }
+      if (await textSenden(t.titel, t.text)) { sammelAufGeraet = true; steuerungZeigen({ beiMarker }); return; }
       toast('Teleprompter-Gerät nicht erreichbar, zeige den Text hier');
     }
-    openPrompter(t.titel, t.text);
+    openPrompter(t.titel, t.text, { beiMarker });
   },
   async 'share-station'(tagId, el) {
     const t = await stationText(tagId, el);
@@ -980,8 +1022,113 @@ const aktionen = {
   },
   async 'kalender-ics'(id) {
     const b = await buendelHolen(id);
-    herunterladen(`dreh-${slug(b.drehtag.kunde)}.ics`, new Blob([M.icsText(b)], { type: 'text/calendar' }));
+    const [stufe, startpunkt] = await Promise.all([db.getMeta('erinnerungen'), db.getMeta('startpunkt')]);
+    herunterladen(`dreh-${slug(b.drehtag.kunde)}.ics`, new Blob([M.icsText(b, { stufe: stufe || 'normal', startpunkt })], { type: 'text/calendar' }));
     if (!istNativ) toast('Kalender-Datei liegt im Download-Ordner. Öffnen trägt den Termin mit Erinnerungen ein.');
+  },
+
+  async 'share-callsheet'(id) {
+    const b = await buendelHolen(id);
+    const wetter = M.wetterKurz(await wetterVon(b.drehtag));
+    teilenMeldung(await shareText(`Call Sheet ${b.drehtag.kunde}`, M.callSheetText(b, { wetter })), 'Call Sheet');
+  },
+  async 'share-freigabe'(id) {
+    const b = await buendelHolen(id);
+    if (!b.shots.some(M.istSprechtext)) { toast('Noch keine Sprechtexte'); return; }
+    const r = await shareText(`Sprechtexte ${b.drehtag.kunde}`, M.freigabeText(b, await db.getMeta('absender')));
+    teilenMeldung(r, 'Text');
+    if (r !== 'abgebrochen') { await aendereTag(id, 'basis', (t) => { t.freigabeAngefragt = Date.now(); }); render(); }
+  },
+  async 'alle-freigegeben'(id) {
+    const b = await buendelHolen(id);
+    const offen = M.freigabeOffen(b);
+    await mitRueckgaengig(id, `${anzahl(offen.length, 'Text', 'Texte')} als freigegeben markiert`, async () => {
+      for (const s of offen) await aendereZeile('shots', s.id, (x) => { x.freigabe = { zeit: Date.now(), text: x.text }; });
+    });
+  },
+  async 'share-zeiten'(id) {
+    const b = await buendelHolen(id);
+    teilenMeldung(await shareText(`Zeiten ${b.drehtag.kunde}`, M.zeitenText(b)), 'Zeiten');
+  },
+  async 'zeit-jetzt'(id, el) {
+    const feld = el.dataset.feld;
+    await aendereTag(id, 'zeiten', (x) => { x[feld] = jetztHHMM(); });
+    toast(`${{ abfahrt: 'Abfahrt', ankunft: 'Ankunft', ende: 'Ende', zurueck: 'Zurück' }[feld]} ${jetztHHMM()} eingetragen`);
+    render();
+  },
+  async 'karten-gesichert'(id) {
+    await aendereTag(id, 'basis', (t) => { t.kartenGesichert = Date.now(); });
+    render();
+  },
+  marker: (tagId) => markerSetzen(tagId),
+  'pflicht-auf'(id) { z.pflichtOffen = z.pflichtOffen === id ? '' : id; render(); },
+  'faden-nichts'() {},
+  async 'frage-ok'(id, el) {
+    const s = await shotHolen(id);
+    const frage = M.interviewFragen(s)[Number(el.dataset.nr)];
+    if (!frage) return;
+    await aendereZeile('shots', id, (x) => {
+      const ok = new Set(x.fragenOk || []);
+      if (ok.has(frage)) ok.delete(frage); else ok.add(frage);
+      x.fragenOk = [...ok];
+    });
+    render();
+  },
+  async einverstaendnis(id) {
+    const s = await shotHolen(id);
+    const text = (await db.getMeta('einverstaendnisText')) || '';
+    const res = await openUnterschrift({ text, name: s.titel || '' });
+    if (!res?.blob) return;
+    const medienId = db.uid();
+    await db.put('medien', { id: medienId, drehtagId: s.drehtagId, shotId: id, locationId: '', art: 'unterschrift', blob: res.blob, erstellt: Date.now() });
+    await aendereZeile('shots', id, (x) => {
+      x.einverstaendnis = { name: res.name, zeit: Date.now(), text, unterschriftId: medienId };
+      if (!x.titel && res.name) x.titel = res.name;
+    });
+    toast(text.trim() ? 'Einverständnis gespeichert' : 'Unterschrift gespeichert, aber ohne Text. Text unter „Sicherung“ eintragen.');
+    render();
+  },
+  async 'einverstaendnis-weg'(id) {
+    const s = await shotHolen(id);
+    await mitRueckgaengig(s.drehtagId, 'Einverständnis entfernt', async () => {
+      if (s.einverstaendnis?.unterschriftId) await db.entfernen('medien', s.einverstaendnis.unterschriftId);
+      await aendereZeile('shots', id, (x) => { x.einverstaendnis = null; });
+    });
+  },
+  async 'einverstaendnis-pdf'(id) {
+    const s = await shotHolen(id);
+    if (!s.einverstaendnis) return;
+    const [tag, bild] = await Promise.all([db.get('drehtage', s.drehtagId), db.get('medien', s.einverstaendnis.unterschriftId)]);
+    const url = bild ? URL.createObjectURL(bild.blob) : '';
+    const o = showOverlay(einverstaendnisBlatt(s, tag, url), { onClose: () => url && URL.revokeObjectURL(url) });
+    o.el.querySelector('.druck').addEventListener('click', (e) => {
+      const k = e.target.closest('[data-d]');
+      if (k?.dataset.d === 'close') o.close();
+      if (k?.dataset.d === 'print') window.print();
+    });
+  },
+  // Einstellungen unter „Sicherung“
+  async 'erinnerung-stufe'(wert) { await db.setMeta('erinnerungen', wert); render(); },
+  async 'wetter-an'(wert) { await db.setMeta('wetterAn', wert === 'an'); render(); },
+  'startpunkt-hier'() {
+    if (!navigator.geolocation) { toast('Standort ist hier nicht verfügbar'); return; }
+    toast('Standort wird ermittelt …');
+    navigator.geolocation.getCurrentPosition(
+      async (p) => {
+        await db.setMeta('startpunkt', { koordinaten: `${p.coords.latitude.toFixed(5)}, ${p.coords.longitude.toFixed(5)}` });
+        toast('Startpunkt gespeichert');
+        render();
+      },
+      () => toast('Kein Standort – Freigabe oder GPS prüfen'),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+    );
+  },
+  async 'vorlagen-zurueck'() {
+    const tage = await db.getAll('drehtage');
+    const fehlend = M.MITGELIEFERT.filter((v) => !tage.some((t) => t.mitgeliefert === v.key));
+    for (const v of fehlend) await db.buendelSchreiben(M.vorlageBuendel(v));
+    toast(`${anzahl(fehlend.length, 'Vorlage', 'Vorlagen')} wiederhergestellt`);
+    render();
   },
 
   // Drehtag abschließen: Überblick, was liegen blieb, dann Status „Gedreht“ und Übergabe an Claude
@@ -990,14 +1137,22 @@ const aktionen = {
     const b = await buendelHolen(id);
     const s = M.abschlussStand(b);
     const name = (x) => esc(M.shotName(x));
+    const pack = (b.drehtag.packliste?.posten || []).filter((p) => !p.ignoriert);
     const liste = (titel, xs) => (xs.length ? `<p class="abschnitt">${titel} · ${xs.length}</p><ul class="abschluss-liste">${xs.slice(0, 8).map((x) => `<li>${esc(M.typVon(x.typ).kurz)}: ${name(x)}</li>`).join('')}${xs.length > 8 ? `<li class="mute">und ${xs.length - 8} weitere</li>` : ''}</ul>` : '');
     let wahl = null;
     const o = showOverlay(`
       <div class="sheet-wrap"><div class="sheet" role="dialog" aria-label="Drehtag abschließen">
         <h2>Drehtag abschließen</h2>
         <p><b>${s.gedreht} von ${s.gesamt} Shots gedreht.</b>${!s.offen.length ? ' Nichts liegen geblieben.' : ''}</p>
-        ${liste('Nicht gedreht', s.offen)}
+        ${liste('Pflicht, nicht gedreht', s.pflichtOffen)}
+        ${liste('Interview ohne Einverständnis', s.ohneEinverstaendnis)}
+        ${liste('Nicht gedreht', s.offen.filter((x) => !x.pflicht))}
         ${liste('Optional, nicht gedreht', s.optionalOffen)}
+        <p class="abschnitt">Bevor du fährst</p>
+        <label class="check-row"><input type="checkbox" class="chk" data-ab="karten" ${b.drehtag.kartenGesichert ? 'checked' : ''}> Speicherkarten doppelt gesichert (erst dann formatieren)</label>
+        ${pack.length ? `<details class="abbau"><summary>Abbau-Check: alles wieder eingepackt? <span class="mute">${pack.filter((p) => p.zurueck).length}/${pack.length}</span></summary>
+          ${pack.map((p) => `<label class="check-row"><input type="checkbox" class="chk" data-ab-posten="${p.id}" ${p.zurueck ? 'checked' : ''}> ${esc(p.name)}</label>`).join('')}
+        </details>` : ''}
         <p class="mute">Der Status wird „Gedreht“. Nicht Gedrehtes bleibt in der Shotliste offen.</p>
         <button class="sheet-opt" data-w="claude"><b>Abschließen und an Claude geben</b><span>„Datei für Claude“ teilen: Clips zuordnen, Schnitt-Übergabe</span></button>
         <button class="sheet-opt" data-w="nur"><b>Nur abschließen</b><span>Später weitergeben</span></button>
@@ -1005,7 +1160,11 @@ const aktionen = {
       </div></div>`, { onClose: () => danach() });
     const danach = async () => {
       if (!wahl) return;
-      await mitRueckgaengig(id, 'Drehtag abgeschlossen', () => aendereTag(id, 'basis', (t) => { t.status = 'gedreht'; t.abgeschlossen = Date.now(); }));
+      await mitRueckgaengig(id, 'Drehtag abgeschlossen', async () => {
+        await aendereTag(id, 'basis', (t) => { t.status = 'gedreht'; t.abgeschlossen = Date.now(); });
+        // Ende vor Ort für die Abrechnung, falls noch nicht eingetragen
+        await aendereTag(id, 'zeiten', (x) => { if (!x.ende) x.ende = jetztHHMM(); });
+      });
       if (location.hash !== '#/tag/' + id) location.hash = '#/tag/' + id;
       if (wahl === 'claude') await aktionen['share-datei'](id);
     };
@@ -1014,6 +1173,12 @@ const aktionen = {
       if (!b2) return;
       wahl = b2.dataset.w === 'zu' ? null : b2.dataset.w;
       o.close();
+    });
+    // Häkchen im Dialog sofort speichern, egal wie er geschlossen wird
+    o.el.querySelector('.sheet').addEventListener('change', (e) => {
+      const el = e.target;
+      if (el.dataset.ab === 'karten') aendereTag(id, 'basis', (t) => { t.kartenGesichert = el.checked ? Date.now() : 0; });
+      if (el.dataset.abPosten) aendereTag(id, 'packliste', (p) => { const x = p.posten.find((q) => q.id === el.dataset.abPosten); if (x) x.zurueck = el.checked; });
     });
   },
   async 'tag-oeffnen'(id) {
@@ -1128,6 +1293,10 @@ async function beiAenderung(e) {
   try {
     if (el.dataset.change === 'toggle-shot') {
       await aendereZeile('shots', el.dataset.id, (s) => { s.erledigt = el.checked; s.erledigtUm = el.checked ? Date.now() : 0; });
+      render();
+    } else if (el.dataset.change === 'freigabe') {
+      await allesGespeichert();
+      await aendereZeile('shots', el.dataset.id, (s) => { s.freigabe = el.checked ? { zeit: Date.now(), text: s.text } : null; });
       render();
     } else if (el.dataset.change === 'auch-an') {
       // Optionaler Shot: weitere mögliche Orte an- oder abwählen

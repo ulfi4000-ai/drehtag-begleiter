@@ -94,7 +94,7 @@ export async function textSenden(titel, text) {
 }
 
 // Fernsteuerung als Leiste unten. Bluetooth-Tasten am Hauptgerät: Weiter = Start/Pause, Zurück = zurück.
-export function steuerungZeigen() {
+export function steuerungZeigen({ beiMarker = null } = {}) {
   const e = einstellung();
   const o = showOverlay(`
     <div class="sheet-wrap"><div class="sheet fern-prompter" role="dialog" aria-label="Teleprompter steuern">
@@ -112,6 +112,7 @@ export function steuerungZeigen() {
         <button class="btn" data-fp="kleiner">A −</button><span class="fp-wert" data-w="groesse">${e.groesse}</span><button class="btn" data-fp="groesser">A +</button>
         <button class="btn ${e.spiegeln ? 'an' : ''}" data-fp="spiegeln">Spiegeln</button>
       </div>
+      ${beiMarker ? '<button class="btn big" data-fp="marker">⚑ Marker setzen</button>' : ''}
       <button class="btn big" data-fp="zu">Schließen</button>
     </div></div>`);
   const zeigen = () => {
@@ -124,6 +125,7 @@ export function steuerungZeigen() {
     if (!b) return;
     const was = b.dataset.fp;
     if (was === 'zu') { o.close(); return; }
+    if (was === 'marker') { beiMarker?.(); return; }
     if (['umschalten', 'anfang', 'zurueck', 'vor'].includes(was)) {
       if (!(await senden({ typ: was }))) toast('Kein Teleprompter-Gerät verbunden');
       return;

@@ -5,6 +5,7 @@
 export const TYPEN = [
   { id: 'hook', label: 'Hooks', kurz: 'Hook' },
   { id: 'oton', label: 'Skripte & O-Töne', kurz: 'Skript/O-Ton' },
+  { id: 'interview', label: 'Interviews', kurz: 'Interview' },
   { id: 'broll', label: 'B-Roll', kurz: 'B-Roll' },
   { id: 'cta', label: 'CTA', kurz: 'CTA' },
   { id: 'karussell', label: 'Karussells', kurz: 'Karussell' },
@@ -49,6 +50,16 @@ export const FRAGEN_SETS = [
     'Welche Fragen werden gestellt?',
     'Was soll nicht vorkommen?',
     'Was ist der Aufruf am Ende (CTA)?',
+  ] },
+  { id: 'event', label: 'Event', fragen: [
+    'Programm mit festen Uhrzeiten',
+    'Wichtige Personen (Name, Funktion), die ins Bild sollen',
+    'Interviewpartner und wann sie Zeit haben',
+    'Branding vor Ort (Logo-Wand, Aufsteller, Merch)',
+    'Was oder wer darf nicht gefilmt werden?',
+    'Ansprechpartner vor Ort (Handy)',
+    'Akkreditierung, Parken, Lager- und Ladeplatz fürs Equipment',
+    'Was wird geliefert (Aftermovie, Reels, Fotos) und bis wann?',
   ] },
 ];
 
@@ -141,15 +152,33 @@ const alsZeit = (min) => {
 };
 const istZeit = (t) => /^\d{1,2}:\d{2}$/.test(t || '');
 
-// Aus Drehbeginn und den Dauern der Blöcke die Uhrzeiten ausrechnen
+// Aus Drehbeginn und den Dauern der Blöcke die Uhrzeiten ausrechnen.
+// Ein Block mit fester Startzeit (block.fest = "HH:MM", z. B. Programmpunkt beim Event) beginnt immer dann.
+// Läuft der Block davor zu lang, steht die Überschneidung in "ueber" (Minuten).
 export function zeitplanMitZeiten(start, bloecke) {
   let t = istZeit(start) ? inMin(start) : null;
   return (bloecke || []).map((b) => {
     const dauer = Math.max(0, Number(b.dauer) || 0);
+    let ueber = 0;
+    if (istZeit(b.fest)) {
+      const f = inMin(b.fest);
+      if (t != null && t > f) ueber = t - f;
+      t = f;
+    }
     const von = t;
     if (t != null) t += dauer;
-    return { ...b, dauer, von: von == null ? '' : alsZeit(von), bis: von == null ? '' : alsZeit(von + dauer) };
+    return { ...b, dauer, ueber, von: von == null ? '' : alsZeit(von), bis: von == null ? '' : alsZeit(von + dauer) };
   });
+}
+
+// Nächster fester Programmpunkt in den nächsten 45 Minuten (nur am Drehtag selbst)
+export function naechsterFest(b, jetzt = new Date()) {
+  if (b.drehtag.datum !== heute()) return null;
+  const min = jetzt.getHours() * 60 + jetzt.getMinutes();
+  return zeitplanMitZeiten(b.drehtag.uhrzeit, b.drehtag.zeitplan?.bloecke)
+    .filter((x) => istZeit(x.fest))
+    .map((x) => ({ ...x, in: inMin(x.von) - min }))
+    .find((x) => x.in >= 0 && x.in <= 45) || null;
 }
 export const zeitplanMinuten = (bloecke) => (bloecke || []).reduce((s, b) => s + Math.max(0, Number(b.dauer) || 0), 0);
 export function zeitplanEnde(start, bloecke) {
@@ -214,8 +243,8 @@ export function packAusSettings(settings, posten) {
 
 // Minuten pro Shot für den Ablauf-Vorschlag. Annahmen, keine Messwerte; danach frei anpassbar.
 // umbau: zusätzliche Minuten für jedes weitere Setting an derselben Location.
-export const SCHAETZUNG = { hook: 3, oton: 5, cta: 2, broll: 3, karussell: 2, sonst: 3, umbau: 10 };
-const RANG = { hook: 0, oton: 1, cta: 2, broll: 3, karussell: 4, sonst: 5 };
+export const SCHAETZUNG = { hook: 3, oton: 5, interview: 15, cta: 2, broll: 3, karussell: 2, sonst: 3, umbau: 10 };
+const RANG = { hook: 0, oton: 1, interview: 1, cta: 2, broll: 3, karussell: 4, sonst: 5 };
 
 // Shots einer Station in Drehreihenfolge.
 // Zuerst nach Setting gebündelt (damit selten umgebaut wird; Shots ohne Setting zuletzt),
@@ -328,6 +357,10 @@ export function bereitschaft(b) {
     if (ohneOrt.length) p('ort', 'orange', `${ohneOrt.length} ${ohneOrt.length === 1 ? 'Shot' : 'Shots'} ohne Location`, 'shots');
   }
   if (shots.length && !(t.zeitplan?.bloecke || []).length) p('zeitplan', 'orange', 'Noch kein Zeitplan', 'plan');
+  const zuLang = zeitplanMitZeiten(t.uhrzeit, t.zeitplan?.bloecke).filter((x) => x.ueber > 0);
+  if (zuLang.length) p('fest', 'orange', `Zeitplan zu voll vor: ${zuLang.map((x) => `${x.titel || 'Block'} (fest ${x.fest}, ${x.ueber} Min. zu spät)`).join(', ')}`, 'plan');
+  const nichtFrei = freigabeOffen(b);
+  if (t.freigabeAngefragt && nichtFrei.length) p('freigabe', 'orange', `${nichtFrei.length} ${nichtFrei.length === 1 ? 'Sprechtext' : 'Sprechtexte'} noch nicht vom Kunden freigegeben`, 'shots');
   const offenFragen = (t.briefing?.fragen || []).filter((f) => !(f.antwort || '').trim());
   if (offenFragen.length) p('briefing', 'orange', `${offenFragen.length} ${offenFragen.length === 1 ? 'Frage' : 'Fragen'} im Briefing offen`, 'briefing');
   const pack = (t.packliste?.posten || []).filter((x) => !x.ok && !x.ignoriert);
@@ -338,6 +371,8 @@ export function bereitschaft(b) {
     const dunkel = zeitplanMitZeiten(t.uhrzeit, t.zeitplan?.bloecke).filter((x) => aussen.has(x.locationId) && /dunkel|mittendrin/.test(sonnenHinweis(sonne, x.von, x.bis)));
     if (dunkel.length) p('sonne', 'orange', `Außen nach Sonnenuntergang: ${dunkel.map((x) => x.titel).join(', ')}`, 'plan');
   }
+  const nass = regenAussen(b);
+  if (nass.length) p('wetter', 'orange', `Regen erwartet bei Außen: ${nass.map((x) => `${x.titel} (${x.prozent} %)`).join(', ')}`, 'plan');
   const aktiv = punkte.filter((x) => !x.ignoriert);
   const stufe = aktiv.some((x) => x.stufe === 'rot') ? 'rot' : aktiv.length ? 'orange' : 'gruen';
   return { stufe, punkte, offen: aktiv.length };
@@ -352,7 +387,15 @@ export function abschlussStand(b) {
     gesamt: pflicht.length + shots.filter((s) => istOptional(s) && s.erledigt).length,
     offen: pflicht.filter((s) => !s.erledigt),
     optionalOffen: shots.filter((s) => istOptional(s) && !s.erledigt),
+    pflichtOffen: shots.filter((s) => s.pflicht && !s.erledigt),
+    ohneEinverstaendnis: shots.filter((s) => s.typ === 'interview' && s.erledigt && !s.einverstaendnis),
   };
+}
+
+// Pflicht-Shots (z. B. Branding beim Event): Stand über den ganzen Drehtag, egal an welcher Station
+export function pflichtStand(b) {
+  const p = (b.shots || []).filter((s) => s.pflicht);
+  return { gesamt: p.length, erledigt: p.filter((s) => s.erledigt).length, offen: p.filter((s) => !s.erledigt).sort(nachPos) };
 }
 
 // Am Drehtag öffnet die App gleich den Roten Faden: ab einer Stunde vor Drehbeginn bis Mitternacht
@@ -673,9 +716,20 @@ export function schnittText(b) {
         if (s.text && !inZeile) z.push(`  > ${einruecken(s.text, '  > ')}`);
         if (s.take) z.push(`  - Take: ${eineZeile(s.take)}`);
         if (s.clips?.length) z.push(`  - Clips: ${s.clips.join(', ')}`);
+        if (s.typ === 'interview') {
+          const bb = bauchbinde(s);
+          if (bb) z.push(`  - Bauchbinde: ${bb}`);
+          z.push(`  - Einverständnis: ${s.einverstaendnis ? `unterschrieben ${new Date(s.einverstaendnis.zeit).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}` : 'fehlt'}`);
+        }
+        if (s.erledigtUm) z.push(`  - Abgehakt: ${uhrzeitVon(s.erledigtUm)}`);
         if (s.notiz) z.push(`  - Notiz: ${eineZeile(s.notiz)}`);
       }
     }
+  }
+  const marker = markerVon(tag);
+  if (marker.length) {
+    z.push('', '## Marker', '', 'Am Set gesetzt („Das war gut“). Uhrzeit des Handys; Clips über die Aufnahmezeit zuordnen.', '');
+    for (const m of marker) z.push(`- ${uhrzeitVon(m.zeit, true)}${m.station ? ` · ${m.station}` : ''}${m.shot ? ` · bei „${m.shot}“` : ''}`);
   }
   return z.join('\n') + '\n';
 }
@@ -719,19 +773,31 @@ export function briefingText(b) {
 }
 
 // Kalendereintrag im iCalendar-Format. Ohne Datum gibt es keinen Eintrag.
-export function icsText(b) {
+// Erinnerungen je nach Stufe (Einstellung unter „Sicherung“), damit nichts nervt:
+//   aus:    keine Erinnerungen
+//   wenig:  Vorabend 18 Uhr, Abfahrt (oder 1 Stunde vor Drehbeginn)
+//   normal: dazu 10 Min. vor jedem festen Programmpunkt (dicht beieinander zusammengefasst)
+//           und einmal 1 Stunde vor Ende, falls Pflicht-Shots geplant sind
+// Feste Programmpunkte stehen außerdem als eigene Termine im Kalender.
+export function icsText(b, { stufe = 'normal', startpunkt = null } = {}) {
   const tag = b.drehtag;
   if (!tag.datum) return null;
-  const esc = (t) => String(t || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+  const esc = (t) => String(t || '').replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
   const tagZahl = tag.datum.replace(/-/g, '');
   const stempelJetzt = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  const um = (min) => `${tagZahl}T${alsZeit(Math.min(min, 1439)).replace(':', '')}00`;
+  const alarm = (trigger, text) => ['BEGIN:VALARM', 'ACTION:DISPLAY', trigger, `DESCRIPTION:${esc(text)}`, 'END:VALARM'];
+  const bloecke = zeitplanMitZeiten(tag.uhrzeit, tag.zeitplan?.bloecke);
   const z = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Drehtag-Begleiter//DE', 'BEGIN:VEVENT',
     `UID:${tag.id}@drehtag-begleiter`, `DTSTAMP:${stempelJetzt}`];
+  let start = null;
+  let ende = null;
   if (istZeit(tag.uhrzeit)) {
-    const start = inMin(tag.uhrzeit);
-    // Länge aus dem Zeitplan, ohne Zeitplan eine Stunde. Über Mitternacht wird nicht gerechnet.
-    const ende = Math.min(start + (zeitplanMinuten(tag.zeitplan?.bloecke) || 60), 1439);
-    z.push(`DTSTART:${tagZahl}T${alsZeit(start).replace(':', '')}00`, `DTEND:${tagZahl}T${alsZeit(ende).replace(':', '')}00`);
+    start = inMin(tag.uhrzeit);
+    // Ende aus dem Zeitplan, ohne Zeitplan eine Stunde. Über Mitternacht wird nicht gerechnet.
+    const bis = bloecke.length && bloecke[bloecke.length - 1].bis ? inMin(bloecke[bloecke.length - 1].bis) : start + 60;
+    ende = Math.min(Math.max(bis, start + 15), 1439);
+    z.push(`DTSTART:${um(start)}`, `DTEND:${um(ende)}`);
   } else {
     const d = new Date(tag.datum + 'T00:00');
     d.setDate(d.getDate() + 1);
@@ -741,21 +807,227 @@ export function icsText(b) {
   z.push(`SUMMARY:${esc('Dreh: ' + tag.kunde)}`);
   if (tag.ort) z.push(`LOCATION:${esc(tag.ort)}`);
   const offenPack = (tag.packliste?.posten || []).filter((p) => !p.ok && !p.ignoriert).map((p) => p.name);
+  const fahrt = fahrtVon(tag, startpunkt);
   const beschreibung = [
     tag.ansprechpartner ? `Kontakt: ${tag.ansprechpartner}${tag.telefon ? ' (' + tag.telefon + ')' : ''}` : '',
+    fahrt?.abfahrt ? `Abfahrt spätestens ${fahrt.abfahrt} (Fahrt ca. ${fahrt.min} Min.)` : '',
     tag.notizen,
     offenPack.length ? `Noch packen: ${offenPack.join(', ')}` : '',
   ].filter(Boolean).join('\n');
   if (beschreibung) z.push(`DESCRIPTION:${esc(beschreibung)}`);
-  // Erinnerungen: am Vorabend um 18 Uhr und (mit Drehbeginn) eine Stunde vorher
-  const vorabend = new Date(tag.datum + 'T18:00');
-  vorabend.setDate(vorabend.getDate() - 1);
-  const utc = vorabend.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
-  z.push('BEGIN:VALARM', 'ACTION:DISPLAY', `TRIGGER;VALUE=DATE-TIME:${utc}`,
-    `DESCRIPTION:${esc(`Morgen Dreh: ${tag.kunde}. Akkus laden, Karten leeren${offenPack.length ? ', Packliste prüfen' : ''}.`)}`, 'END:VALARM');
-  if (istZeit(tag.uhrzeit)) z.push('BEGIN:VALARM', 'ACTION:DISPLAY', 'TRIGGER:-PT1H', `DESCRIPTION:${esc(`In einer Stunde: Dreh ${tag.kunde}`)}`, 'END:VALARM');
-  z.push('END:VEVENT', 'END:VCALENDAR');
+  if (stufe !== 'aus') {
+    const vorabend = new Date(tag.datum + 'T18:00');
+    vorabend.setDate(vorabend.getDate() - 1);
+    const utc = vorabend.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+    z.push(...alarm(`TRIGGER;VALUE=DATE-TIME:${utc}`, `Morgen Dreh: ${tag.kunde}. Akkus laden, Karten leeren${offenPack.length ? ', Packliste prüfen' : ''}.`));
+    if (start != null) {
+      if (fahrt?.abfahrt) z.push(...alarm(`TRIGGER:-PT${fahrt.min + fahrt.puffer + 10}M`, `In 10 Min. losfahren: Dreh ${tag.kunde} (Abfahrt ${fahrt.abfahrt})`));
+      else z.push(...alarm('TRIGGER:-PT1H', `In einer Stunde: Dreh ${tag.kunde}`));
+      if (stufe === 'normal' && (b.shots || []).some((s) => s.pflicht) && ende - start > 90) {
+        z.push(...alarm('TRIGGER;RELATED=END:-PT1H', 'Noch 1 Stunde: Pflicht-Shots im Roten Faden prüfen'));
+      }
+    }
+  }
+  z.push('END:VEVENT');
+  // Feste Programmpunkte als eigene Termine. Erinnerungen, die weniger als 15 Min. auseinanderliegen, werden eine.
+  let letzteErinnerung = -999;
+  let letzterTermin = null;
+  const termine = [];
+  for (const x of bloecke.filter((y) => istZeit(y.fest) && y.von)) {
+    const von = inMin(x.von);
+    const termin = ['BEGIN:VEVENT', `UID:${tag.id}-${x.id}@drehtag-begleiter`, `DTSTAMP:${stempelJetzt}`,
+      `DTSTART:${um(von)}`, `DTEND:${um(von + Math.max(x.dauer, 5))}`, `SUMMARY:${esc(`${x.titel || 'Programmpunkt'} (${tag.kunde})`)}`];
+    if (x.hinweis) termin.push(`DESCRIPTION:${esc(x.hinweis)}`);
+    if (stufe === 'normal') {
+      if (von - letzteErinnerung >= 15) {
+        termin.push(...alarm('TRIGGER:-PT10M', `In 10 Min.: ${x.titel || 'Programmpunkt'} (${x.von} Uhr)`));
+        letzteErinnerung = von;
+        letzterTermin = termin;
+      } else if (letzterTermin) {
+        // an die vorige Erinnerung anhängen statt eine weitere zu schicken
+        const i = letzterTermin.findLastIndex((l) => l.startsWith('DESCRIPTION:In 10 Min.'));
+        if (i >= 0) letzterTermin[i] += esc(`, danach ${x.titel || 'Programmpunkt'} (${x.von})`);
+      }
+    }
+    termin.push('END:VEVENT');
+    termine.push(termin);
+  }
+  for (const t of termine) z.push(...t);
+  z.push('END:VCALENDAR');
   return z.join('\r\n');
+}
+
+// ---------- Fahrt zum Drehort ----------
+// Ohne Internet nur grob: Luftlinie × 1,3 als Straßenweg, Tempo je nach Strecke.
+// Wer die Fahrzeit kennt, trägt sie am Drehtag ein (drehtag.fahrzeit in Minuten), dann gilt die.
+export function luftlinieKm(a, b) {
+  const dLat = (b.lat - a.lat) * RAD;
+  const dLon = (b.lon - a.lon) * RAD;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * RAD) * Math.cos(b.lat * RAD) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.asin(Math.sqrt(h));
+}
+export function fahrtSchaetzung(km) {
+  const strasse = km * 1.3;
+  const tempo = strasse < 15 ? 30 : strasse < 60 ? 55 : 85;
+  return Math.max(5, Math.round((strasse / tempo) * 60 / 5) * 5);
+}
+const FAHRT_PUFFER = 15; // Parken, Ausladen, Ankommen
+export function fahrtVon(tag, startpunkt) {
+  const ziel = koordinatenAus(tag?.koordinaten);
+  const start = koordinatenAus(startpunkt?.koordinaten);
+  const manuell = Number(tag?.fahrzeit) || 0;
+  if (!manuell && (!ziel || !start)) return null;
+  const km = ziel && start ? luftlinieKm(start, ziel) : null;
+  const min = manuell || fahrtSchaetzung(km);
+  return {
+    km, min, geschaetzt: !manuell, puffer: FAHRT_PUFFER,
+    abfahrt: istZeit(tag.uhrzeit) ? alsZeit(inMin(tag.uhrzeit) - min - FAHRT_PUFFER) : '',
+    maps: start && ziel ? `https://www.google.com/maps/dir/?api=1&origin=${start.lat},${start.lon}&destination=${ziel.lat},${ziel.lon}&travelmode=driving` : '',
+  };
+}
+
+// ---------- Wetter ----------
+// b.wetter = { stunden: [{ h: 0–23, temp, regen (Wahrscheinlichkeit in %), mm }] }, von js/wetter.js geladen.
+export function wetterKurz(w) {
+  const st = w?.stunden || [];
+  if (!st.length) return '';
+  const tag = st.filter((x) => x.h >= 7 && x.h <= 21);
+  const temps = tag.map((x) => x.temp).filter((x) => x != null);
+  const nass = tag.filter((x) => x.regen >= 50);
+  const t = temps.length ? `${Math.round(Math.min(...temps))}–${Math.round(Math.max(...temps))} °C` : '';
+  const r = nass.length ? `Regen wahrscheinlich ${nass[0].h}–${nass[nass.length - 1].h + 1} Uhr (bis ${Math.max(...nass.map((x) => x.regen))} %)` : 'kaum Regen';
+  return [t, r].filter(Boolean).join(' · ');
+}
+// Außen-Blöcke im Zeitplan, in deren Stunden Regen wahrscheinlich ist (ab 50 %)
+export function regenAussen(b) {
+  const st = b.wetter?.stunden || [];
+  if (!st.length) return [];
+  const aussen = new Set((b.locations || []).filter((l) => l.aussen).map((l) => l.id));
+  const t = b.drehtag;
+  return zeitplanMitZeiten(t.uhrzeit, t.zeitplan?.bloecke)
+    .filter((x) => aussen.has(x.locationId) && x.von)
+    .map((x) => {
+      const [a, e] = [inMin(x.von), inMin(x.bis)];
+      const stunden = st.filter((y) => y.h * 60 < e && (y.h + 1) * 60 > a);
+      return { titel: x.titel, prozent: Math.max(0, ...stunden.map((y) => y.regen || 0)) };
+    })
+    .filter((x) => x.prozent >= 50);
+}
+
+// ---------- Kundenfreigabe der Sprechtexte ----------
+// shot.freigabe = { zeit, text }. Ändert sich der Text danach, gilt er wieder als offen.
+export const istSprechtext = (s) => ['hook', 'oton', 'cta'].includes(s.typ) && !!(s.text || '').trim();
+export const freigegeben = (s) => !!s.freigabe && s.freigabe.text === s.text;
+export const freigabeOffen = (b) => (b.shots || []).filter((s) => istSprechtext(s) && !freigegeben(s));
+
+export function freigabeText(b, absender) {
+  const { drehtag: tag, shots = [], locations = [], videos = [] } = b;
+  const z = [`Sprechtexte zur Freigabe: ${tag.kunde}`];
+  if (tag.datum) z.push(`Dreh: ${fmtDatum(tag.datum)}`);
+  z.push('', 'Bitte die Texte prüfen und kurz bestätigen oder Änderungen schicken.');
+  let nr = 0;
+  for (const g of gruppieren(shots.filter(istSprechtext), locations, videos, 'video')) {
+    z.push('', g.label.toUpperCase());
+    for (const s of g.shots) {
+      nr += 1;
+      z.push(`${nr}. ${typVon(s.typ).kurz}${s.titel ? ` – ${s.titel}` : ''}`, `   „${einruecken(s.text, '    ')}“`);
+    }
+  }
+  if ((absender || '').trim()) z.push('', absender.trim());
+  return z.join('\n');
+}
+
+// ---------- Interviews ----------
+export const bauchbinde = (s) => [s.titel, s.funktion, s.firma].map((x) => (x || '').trim()).filter(Boolean).join(', ');
+export const interviewFragen = (s) => String(s.text || '').split('\n').map((x) => x.trim()).filter(Boolean);
+
+// ---------- Marker und Zeiten ----------
+// Marker: am Set per Knopf oder Fernbedienung gesetzt, drehtag.marker.liste = [{ id, zeit, station, shot }]
+export const markerVon = (tag) => [...(tag?.marker?.liste || [])].sort((a, b) => a.zeit - b.zeit);
+export function uhrzeitVon(ms, sekunden = false) {
+  const d = new Date(ms);
+  const zz = (n) => String(n).padStart(2, '0');
+  return `${zz(d.getHours())}:${zz(d.getMinutes())}${sekunden ? ':' + zz(d.getSeconds()) : ''}`;
+}
+const dauerText = (min) => `${Math.floor(min / 60)}:${String(min % 60).padStart(2, '0')} Std.`;
+const spanne = (von, bis) => (istZeit(von) && istZeit(bis) ? ((inMin(bis) - inMin(von)) + 1440) % 1440 : null);
+
+// Erster und letzter Haken einer Station: grob, wie lange dort wirklich gedreht wurde
+export function stationIst(st) {
+  const zeiten = (st.shots || []).map((s) => s.erledigtUm).filter(Boolean).sort((a, b) => a - b);
+  if (!zeiten.length) return null;
+  return { von: uhrzeitVon(zeiten[0]), bis: uhrzeitVon(zeiten[zeiten.length - 1]), haken: zeiten.length };
+}
+
+// Zeiten für die Abrechnung: drehtag.zeiten = { abfahrt, ankunft, ende, zurueck } als "HH:MM".
+// Gedreht = erster bis letzter Haken. Dazu Plan gegen Ist je Station.
+export function zeitenText(b) {
+  const tag = b.drehtag;
+  const zt = tag.zeiten || {};
+  const haken = (b.shots || []).map((s) => s.erledigtUm).filter(Boolean).sort((a, c) => a - c);
+  const z = [`Zeiten: ${tag.kunde}${tag.datum ? ', ' + fmtDatum(tag.datum) : ''}`, ''];
+  const zeile = (text, von, bis) => {
+    const m = spanne(von, bis);
+    if (m != null) z.push(`${text}: ${von}–${bis} (${dauerText(m)})`);
+  };
+  zeile('Fahrt hin', zt.abfahrt, zt.ankunft);
+  zeile('Vor Ort', zt.ankunft, zt.ende);
+  if (haken.length) z.push(`Davon gedreht (erster bis letzter Haken): ${uhrzeitVon(haken[0])}–${uhrzeitVon(haken[haken.length - 1])}`);
+  zeile('Rückfahrt', zt.ende, zt.zurueck);
+  const anfang = zt.abfahrt || zt.ankunft;
+  const schluss = zt.zurueck || zt.ende;
+  if (anfang && schluss) zeile('Gesamt', anfang, schluss);
+  if (z.length === 2) z.push('Noch keine Zeiten erfasst.');
+  const stationen = fadenStationen(b).map((st) => ({ st, ist: stationIst(st) })).filter((x) => x.ist || x.st.von);
+  if (stationen.length) {
+    z.push('', 'Stationen (Plan → Ist):');
+    for (const { st, ist } of stationen) {
+      const plan = st.von ? `${st.von}–${st.bis}` : st.dauer ? `${st.dauer} Min.` : '–';
+      z.push(`  ${st.titel}: ${plan} → ${ist ? `${ist.von}–${ist.bis}` : 'kein Haken'}`);
+    }
+  }
+  return z.join('\n');
+}
+
+// ---------- Call Sheet für die Crew ----------
+export function callSheetText(b, { wetter = '' } = {}) {
+  const { drehtag: tag, shots = [], locations = [] } = b;
+  const z = [`CALL SHEET: ${tag.kunde}`];
+  const wann = wannText(tag);
+  if (wann) z.push(`Wann: ${wann}`);
+  if (tag.ort) z.push(`Wo: ${tag.ort}`, `Karte: https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(tag.ort)}`);
+  if (tag.ansprechpartner) z.push(`Kontakt vor Ort: ${tag.ansprechpartner}${tag.telefon ? ' (' + tag.telefon + ')' : ''}`);
+  if (wetter) z.push(`Wetter: ${wetter}`);
+  if (sonnenText(tag)) z.push(`Sonne: ${sonnenText(tag)}`);
+  const bloecke = zeitplanMitZeiten(tag.uhrzeit, tag.zeitplan?.bloecke);
+  if (bloecke.length) {
+    z.push('', 'ABLAUF');
+    const ort = (id) => locations.find((l) => l.id === id)?.name;
+    for (const x of bloecke) {
+      const zeit = x.von ? `${x.von}–${x.bis}` : `${x.dauer} Min`;
+      z.push(`${zeit}  ${x.titel || 'Ohne Titel'}${istZeit(x.fest) ? ' (fest)' : ''}${ort(x.locationId) && ort(x.locationId) !== x.titel ? ` · ${ort(x.locationId)}` : ''}`);
+      if (x.hinweis) z.push(`       ${x.hinweis}`);
+    }
+  }
+  const mitNotiz = [...locations].sort(nachPos).filter((l) => (l.notiz || '').trim());
+  if (mitNotiz.length) {
+    z.push('', 'LOCATIONS');
+    for (const l of mitNotiz) z.push(`${l.name}: ${eineZeile(l.notiz)}`);
+  }
+  const interviews = shots.filter((s) => s.typ === 'interview');
+  if (interviews.length) {
+    z.push('', 'INTERVIEWS');
+    for (const s of interviews) z.push(`${bauchbinde(s) || 'Name offen'}${interviewFragen(s).length ? ` (${interviewFragen(s).length} Fragen)` : ''}`);
+  }
+  const pflicht = shots.filter((s) => s.pflicht);
+  if (pflicht.length) {
+    z.push('', 'PFLICHT-SHOTS');
+    for (const s of pflicht) z.push(`[ ] ${shotName(s)}`);
+  }
+  const pack = (tag.packliste?.posten || []).filter((p) => !p.ignoriert);
+  if (pack.length) z.push('', 'PACKLISTE', ...pack.map((p) => `[ ] ${p.name}`));
+  if ((tag.notizen || '').trim()) z.push('', 'NOTIZEN', tag.notizen.trim());
+  return z.join('\n');
 }
 
 // ---------- Vorlagen ----------
@@ -800,7 +1072,11 @@ export function kopieAlsNeu(b) {
     ...s, id: neueId(), drehtagId: tag.id, locationId: um(s.locationId), videoId: um(s.videoId),
     auchAn: (s.auchAn || []).map(um).filter(Boolean),
     erledigt: false, favorit: false, take: '', clips: [], spaeter: false, erledigtUm: 0, geaendert: jetzt,
+    fragenOk: [], einverstaendnis: null, freigabe: null,
   }));
+  // Fortschritt, Zeiten und Marker gehören zum alten Drehtag
+  for (const k of ['marker', 'zeiten', 'mitgeliefert']) delete tag[k];
+  Object.assign(tag, { abgeschlossen: 0, freigabeAngefragt: 0, kartenGesichert: 0 });
   if (tag.briefing) tag.briefing = { geaendert: jetzt, fragen: tag.briefing.fragen.map((f) => ({ ...f, id: neueId(), antwort: '' })) };
   if (tag.zeitplan) {
     tag.zeitplan = {
@@ -821,12 +1097,145 @@ export function kopieAlsNeu(b) {
   return { drehtag: tag, locations, videos, shots, medien: [], geloescht: [] };
 }
 
+// ---------- Mitgelieferte Vorlagen ----------
+// Gerüste zum Anpassen: Locations, Shotliste (ohne erfundene Hooks oder Skripte), Ablauf, Fragen, Packliste.
+// Sprech-Shots sind leere Platzhalter; die Ampel erinnert daran, sie zu füllen.
+// Gelöschte Vorlagen lassen sich unter „Sicherung“ zurückholen.
+const AUFBAU = { titel: 'Ankommen und Aufbau', dauer: 30 };
+const ABBAU = { titel: 'Abbau', dauer: 15 };
+export const MITGELIEFERT = [
+  {
+    key: 'immobilie', name: 'Immobilien-Reel (Makler)', fragen: ['allgemein', 'makler'],
+    orte: [{ name: 'Außen', aussen: true }, { name: 'Eingang' }, { name: 'Wohnbereich' }, { name: 'Küche' }, { name: 'Bad' }, { name: 'Schlafzimmer' }, { name: 'Garten / Balkon', aussen: true }],
+    videos: ['Objekt-Reel'],
+    shots: [
+      { typ: 'hook', ort: 'Außen', video: 'Objekt-Reel' },
+      { typ: 'oton', titel: 'Moderation Rundgang', ort: 'Wohnbereich', video: 'Objekt-Reel' },
+      { typ: 'cta', ort: 'Außen', video: 'Objekt-Reel' },
+      { typ: 'broll', titel: 'Fassade total', ort: 'Außen', pflicht: true },
+      { typ: 'broll', titel: 'Lage und Umgebung', ort: 'Außen' },
+      { typ: 'broll', titel: 'Eingangstür, Detail', ort: 'Eingang' },
+      { typ: 'broll', titel: 'Wohnbereich total, langsamer Schwenk', ort: 'Wohnbereich', pflicht: true },
+      { typ: 'broll', titel: 'Blick aus dem Fenster', ort: 'Wohnbereich' },
+      { typ: 'broll', titel: 'Küche, Details', ort: 'Küche' },
+      { typ: 'broll', titel: 'Bad total', ort: 'Bad' },
+      { typ: 'broll', titel: 'Schlafzimmer total', ort: 'Schlafzimmer' },
+      { typ: 'broll', titel: 'Garten / Balkon', ort: 'Garten / Balkon' },
+    ],
+    ablauf: [AUFBAU, ...['Außen', 'Eingang', 'Wohnbereich', 'Küche', 'Bad', 'Schlafzimmer', 'Garten / Balkon'].map((o) => ({ titel: o, ort: o, dauer: o === 'Wohnbereich' || o === 'Außen' ? 20 : 10 })), ABBAU],
+    pack: [...PACK_START, 'Gimbal', 'Weitwinkel'],
+  },
+  {
+    key: 'personal', name: 'Personal Branding', fragen: ['allgemein'],
+    orte: [{ name: 'Büro / Arbeitsplatz' }, { name: 'Außen', aussen: true }],
+    videos: ['Reel 1'],
+    shots: [
+      { typ: 'hook', ort: 'Büro / Arbeitsplatz', video: 'Reel 1' },
+      { typ: 'hook', ort: 'Außen', video: 'Reel 1' },
+      { typ: 'oton', titel: 'Über mich', ort: 'Büro / Arbeitsplatz', video: 'Reel 1' },
+      { typ: 'cta', ort: 'Büro / Arbeitsplatz', video: 'Reel 1' },
+      { typ: 'broll', titel: 'Porträt, Blick in die Kamera', ort: 'Büro / Arbeitsplatz', pflicht: true },
+      { typ: 'broll', titel: 'Arbeiten am Schreibtisch', ort: 'Büro / Arbeitsplatz' },
+      { typ: 'broll', titel: 'Gespräch mit Kunde (gestellt)', ort: 'Büro / Arbeitsplatz' },
+      { typ: 'broll', titel: 'Hände und Details', ort: 'Büro / Arbeitsplatz' },
+      { typ: 'broll', titel: 'Ankommen / Gehen', ort: 'Außen' },
+    ],
+    ablauf: [AUFBAU, { titel: 'Büro / Arbeitsplatz', ort: 'Büro / Arbeitsplatz', dauer: 60 }, { titel: 'Außen', ort: 'Außen', dauer: 30 }, ABBAU],
+    pack: [...PACK_START, 'Teleprompter', 'Ansteckmikro'],
+  },
+  {
+    key: 'event', name: 'Event', fragen: ['allgemein', 'event'],
+    orte: [{ name: 'Eingang / Foyer' }, { name: 'Saal / Bühne' }, { name: 'Lounge / Catering' }, { name: 'Interview-Ecke' }],
+    videos: ['Aftermovie', 'Reel'],
+    shots: [
+      { typ: 'broll', titel: 'Logo- / Markenwand', ort: 'Eingang / Foyer', pflicht: true },
+      { typ: 'broll', titel: 'Eingang mit Beschilderung', ort: 'Eingang / Foyer', pflicht: true },
+      { typ: 'broll', titel: 'Branding-Details (Aufsteller, Merch)', ort: 'Eingang / Foyer', pflicht: true },
+      { typ: 'broll', titel: 'Gäste kommen an', ort: 'Eingang / Foyer' },
+      { typ: 'broll', titel: 'Bühne total', ort: 'Saal / Bühne', pflicht: true },
+      { typ: 'broll', titel: 'Redner auf der Bühne', ort: 'Saal / Bühne', pflicht: true },
+      { typ: 'broll', titel: 'Publikum, Reaktion und Applaus', ort: 'Saal / Bühne', pflicht: true },
+      { typ: 'broll', titel: 'Gastgeber in Aktion', ort: 'Lounge / Catering', pflicht: true },
+      { typ: 'broll', titel: 'Gäste im Gespräch', ort: 'Lounge / Catering' },
+      { typ: 'broll', titel: 'Catering, Details', ort: 'Lounge / Catering' },
+      { typ: 'interview', titel: 'Gastgeber', ort: 'Interview-Ecke', video: 'Aftermovie', pflicht: true,
+        text: 'Wer sind Sie und was ist das heute für ein Event?\nWarum gibt es dieses Event?\nWas soll den Gästen in Erinnerung bleiben?\nIn einem Satz: Wie war der Tag?' },
+      { typ: 'interview', titel: 'Gast-Stimmen', ort: 'Interview-Ecke', video: 'Aftermovie',
+        text: 'Wie gefällt Ihnen das Event?\nWas nehmen Sie heute mit?\nIn einem Wort: …?' },
+    ],
+    ablauf: [{ titel: 'Ankommen und Aufbau', dauer: 45 },
+      { titel: 'Einlass', ort: 'Eingang / Foyer', dauer: 30 },
+      { titel: 'Begrüßung', ort: 'Saal / Bühne', dauer: 15 },
+      { titel: 'Programm', ort: 'Saal / Bühne', dauer: 60 },
+      { titel: 'Interviews', ort: 'Interview-Ecke', dauer: 30 },
+      { titel: 'Networking', ort: 'Lounge / Catering', dauer: 45 },
+      { titel: 'Abbau', dauer: 30 }],
+    pack: [...PACK_START, 'Funkstrecke / Ansteckmikros', 'Interview-Licht', 'Ersatzakkus', 'Gaffa', 'Ausweis / Akkreditierung'],
+  },
+  {
+    key: 'interview', name: 'Interview / Testimonial', fragen: ['allgemein', 'interview'],
+    orte: [{ name: 'Interview-Ort' }, { name: 'Arbeitsumfeld' }],
+    videos: ['Testimonial'],
+    shots: [
+      { typ: 'interview', titel: 'Name offen', ort: 'Interview-Ort', video: 'Testimonial', pflicht: true,
+        text: 'Stellen Sie sich bitte kurz vor.\nWie war die Situation vorher?\nWarum haben Sie sich dafür entschieden?\nWas hat sich seitdem verändert?\nWem würden Sie es empfehlen?' },
+      { typ: 'broll', titel: 'Person bei der Arbeit', ort: 'Arbeitsumfeld', video: 'Testimonial', pflicht: true },
+      { typ: 'broll', titel: 'Hände und Details', ort: 'Arbeitsumfeld', video: 'Testimonial' },
+      { typ: 'broll', titel: 'Porträt, Blick in die Kamera', ort: 'Interview-Ort', video: 'Testimonial' },
+      { typ: 'broll', titel: 'Umgebung außen', ort: 'Arbeitsumfeld', video: 'Testimonial' },
+    ],
+    ablauf: [AUFBAU, { titel: 'Interview', ort: 'Interview-Ort', dauer: 30 }, { titel: 'B-Roll', ort: 'Arbeitsumfeld', dauer: 30 }, ABBAU],
+    pack: [...PACK_START, 'Funkstrecke / Ansteckmikro', 'Interview-Licht', 'Zweite Kamera'],
+  },
+  {
+    key: 'foto', name: 'Fotoshooting', fragen: ['allgemein'],
+    orte: [{ name: 'Innen' }, { name: 'Außen', aussen: true }],
+    videos: [],
+    shots: [
+      { typ: 'sonst', titel: 'Porträt hochkant', ort: 'Innen', pflicht: true },
+      { typ: 'sonst', titel: 'Porträt quer (Website-Header)', ort: 'Innen', format: 'quer', pflicht: true },
+      { typ: 'sonst', titel: 'Halbtotale bei der Arbeit', ort: 'Innen' },
+      { typ: 'sonst', titel: 'Team / Gruppe', ort: 'Innen' },
+      { typ: 'sonst', titel: 'Details', ort: 'Innen' },
+      { typ: 'sonst', titel: 'Porträt außen', ort: 'Außen' },
+      { typ: 'sonst', titel: 'Location ohne Person', ort: 'Außen' },
+    ],
+    ablauf: [AUFBAU, { titel: 'Innen', ort: 'Innen', dauer: 60 }, { titel: 'Außen', ort: 'Außen', dauer: 30 }, ABBAU],
+    pack: ['Kamera', 'Objektive (35 mm, 85 mm)', 'Blitz oder Dauerlicht', 'Softbox', 'Reflektor', 'Hintergrund', 'Akkus (geladen)', 'Speicherkarten (leer)', 'Stativ'],
+  },
+];
+
+// Aus einer mitgelieferten Vorlage ein Bündel bauen (Vorlage, also ohne Datum)
+export function vorlageBuendel(def, jetzt = Date.now()) {
+  const tagId = neueId();
+  const locations = def.orte.map((o, i) => ({ id: neueId(), drehtagId: tagId, name: o.name, notiz: '', aussen: !!o.aussen, pos: i + 1, geaendert: jetzt }));
+  const videos = def.videos.map((n, i) => ({ id: neueId(), drehtagId: tagId, name: n, notiz: '', pos: i + 1, geaendert: jetzt }));
+  const ortId = (n) => locations.find((l) => l.name === n)?.id || '';
+  const videoId = (n) => videos.find((v) => v.name === n)?.id || '';
+  const shots = def.shots.map((x, i) => ({
+    id: neueId(), drehtagId: tagId, typ: x.typ, titel: x.titel || '', text: x.text || '',
+    locationId: ortId(x.ort), videoId: videoId(x.video), settingId: '', format: x.format || 'hochkant',
+    erledigt: false, favorit: false, pflicht: !!x.pflicht, take: '', notiz: '', pos: i + 1, geaendert: jetzt,
+  }));
+  const fragen = [];
+  for (const id of def.fragen) frageSetDazu(fragen, id);
+  const drehtag = {
+    id: tagId, kunde: def.name, vorlage: true, mitgeliefert: def.key, erstellt: jetzt, geaendert: jetzt, basisGeaendert: jetzt,
+    datum: '', uhrzeit: '', ort: '', notizen: '', status: STATUS[0].id,
+    briefing: { geaendert: jetzt, fragen },
+    packliste: { geaendert: jetzt, posten: def.pack.map((name) => ({ id: neueId(), name, ok: false })) },
+    zeitplan: { geaendert: jetzt, kundenhinweis: '', bloecke: def.ablauf.map((x) => ({ id: neueId(), titel: x.titel, dauer: x.dauer, locationId: ortId(x.ort), hinweis: x.hinweis || '', fest: '' })) },
+    faden: { geaendert: jetzt, reihenfolge: 'video', fertig: [], aktiv: '' },
+  };
+  return { drehtag, locations, videos, shots, medien: [], geloescht: [] };
+}
+
 // ---------- Zusammenführen ----------
 // Handy und PC arbeiten getrennt an Kopien desselben Drehtags. Beim Zusammenführen
 // gewinnt pro Eintrag die jüngere Fassung. Gelöschtes bleibt gelöscht.
 
 export const stempel = (r) => r?.geaendert || r?.erstellt || 0;
-const TEILE = ['briefing', 'zeitplan', 'packliste', 'faden', 'settings', 'bereit'];
+const TEILE = ['briefing', 'zeitplan', 'packliste', 'faden', 'settings', 'bereit', 'marker', 'zeiten'];
 
 // Der Drehtag selbst hat vier Teile mit eigenem Zeitstempel: die Grunddaten,
 // das Briefing, den Zeitplan und die Packliste. Jeder Teil wird einzeln verglichen.
