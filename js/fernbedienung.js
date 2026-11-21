@@ -65,33 +65,49 @@ function beiTaste(e) {
   const was = bedeutung(name);
   if (!was || e.repeat) return;
 
-  const overlay = document.getElementById('overlay');
-  const prompter = !overlay.hidden && overlay.querySelector('.prompter');
-  const fern = !overlay.hidden && overlay.querySelector('.fern-prompter'); // zweites Gerät steuern
-  const imFaden = location.hash.startsWith('#/faden/') && overlay.hidden;
-  if (!prompter && !fern && !imFaden) return;
-
+  if (!befehlMoeglich()) return;
   e.preventDefault(); // sonst löst z. B. die Leertaste zusätzlich den zuletzt getippten Knopf aus
   if (Date.now() < gesperrt) return;
   gesperrt = Date.now() + 600;
+  befehl(was);
+}
 
+// Wo gerade ein Befehl ankommt: Teleprompter, Fernsteuerung fürs 2. Gerät oder Roter Faden
+function ziele() {
+  const overlay = document.getElementById('overlay');
+  return {
+    prompter: !overlay.hidden && overlay.querySelector('.prompter'),
+    fern: !overlay.hidden && overlay.querySelector('.fern-prompter'),
+    imFaden: location.hash.startsWith('#/faden/') && overlay.hidden,
+  };
+}
+export const befehlMoeglich = () => { const z = ziele(); return !!(z.prompter || z.fern || z.imFaden); };
+
+// Einen Befehl ausführen: 'weiter' | 'zurueck' | 'spaeter' | 'marker'.
+// Benutzt von der Fernbedienung und von den Sprachbefehlen (js/sprachbefehle.js).
+export function befehl(was) {
+  const { prompter, fern, imFaden } = ziele();
+  if (!prompter && !fern && !imFaden) return false;
   if (was === 'marker') {
-    if (fern) klicken('#overlay [data-fp="marker"]');
-    else if (prompter) klicken('#overlay [data-p="marker"]');
-    else klicken('[data-action="marker"]');
-    return;
+    if (fern) return klicken('#overlay [data-fp="marker"]');
+    if (prompter) return klicken('#overlay [data-p="marker"]');
+    return klicken('[data-action="marker"]');
   }
   if (fern) {
-    klicken(was === 'weiter' ? '#overlay [data-fp="umschalten"]' : '#overlay [data-fp="zurueck"]');
-    return;
+    if (was === 'spaeter') return false;
+    return klicken(was === 'weiter' ? '#overlay [data-fp="umschalten"]' : '#overlay [data-fp="zurueck"]');
   }
   if (prompter) {
-    if (was === 'weiter') klicken('#overlay [data-p="play"]');
-    else { const sc = prompter.querySelector('.p-scroll'); sc.scrollTop = Math.max(0, sc.scrollTop - sc.clientHeight / 3); }
-    return;
+    if (was === 'weiter') return klicken('#overlay [data-p="play"]');
+    if (was === 'zurueck') { const sc = prompter.querySelector('.p-scroll'); sc.scrollTop = Math.max(0, sc.scrollTop - sc.clientHeight / 3); return true; }
+    return false;
   }
-  if (was === 'weiter') klicken('[data-action="faden-erledigt"]');
-  else if (!klicken('[data-action="faden-undo"]')) toast('Nichts zum Zurücknehmen');
+  // Im Faden: „weiter“ ist der große Knopf (Shot erledigt oder Station ohne Shots fertig)
+  if (was === 'weiter') return klicken('.faden-ok');
+  if (was === 'spaeter') return klicken('[data-action="faden-spaeter"]');
+  if (klicken('[data-action="faden-undo"]')) return true;
+  toast('Nichts zum Zurücknehmen');
+  return false;
 }
 
 // ---------- Karte unter „Sicherung“: Tasten testen und anlernen ----------

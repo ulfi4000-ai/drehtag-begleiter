@@ -11,6 +11,7 @@ import {
   freigegeben, freigabeOffen, istSprechtext, fahrtVon, wetterKurz, stationIst, fadenStationen, uhrzeitVon, MITGELIEFERT,
 } from './modell.js';
 import { wetterVon } from './wetter.js';
+import { sprachMoeglich, sprachGewuenscht } from './sprachbefehle.js';
 import { z, bildUrl, nachPos, anzahl, statsText, folienText, istLang, platzhalter, woerter } from './zustand.js';
 import { fernbedienungKarte } from './fernbedienung.js';
 import { istNativ, appFassung, sprache } from './nativ.js';
@@ -1252,6 +1253,7 @@ export async function viewFaden(id) {
     <header class="top">
       <a class="back" href="#/tag/${tag.id}" aria-label="Zurück">‹</a>
       <h1>Roter Faden</h1>
+      ${sprachMoeglich ? `<button class="top-btn mikro-knopf ${sprachGewuenscht() ? 'an' : ''}" data-action="sprache" aria-label="Sprachbefehle ${sprachGewuenscht() ? 'aus' : 'an'}schalten">🎙</button>` : ''}
       <button class="top-btn marker-knopf" data-action="marker" data-id="${tag.id}" aria-label="Marker setzen">⚑${markerVon(tag).length ? ' ' + markerVon(tag).length : ''}</button>
       <span class="top-info">${erledigt}/${gesamt}</span>
     </header>
@@ -1331,6 +1333,11 @@ async function einstellungKarten() {
         : st === 'wenig' ? 'Vorabend 18 Uhr und Abfahrt (ohne Startpunkt: 1 Stunde vor Drehbeginn).'
         : 'Vorabend, Abfahrt, 10 Min. vor jedem festen Programmpunkt (dicht beieinander zusammengefasst) und einmal 1 Stunde vor Ende, wenn es Pflicht-Shots gibt.'}</p>
     </section>
+    ${sprachMoeglich ? `
+    <section class="card">
+      <h2>Sprachbefehle</h2>
+      <p class="mute">Im Roten Faden oben auf 🎙 tippen. Dann reicht <b>„Faden“</b> zum Abhaken, dazu „Faden zurück“, „Faden später“ und „Faden Marker“. Im Teleprompter startet und stoppt „Faden“ den Text. Die Erkennung läuft über den Browser (Google bzw. Apple); die App speichert keinen Ton.</p>
+    </section>` : ''}
     <section class="card form" data-save="meta-startpunkt">
       <h2>Startpunkt für die Fahrzeit</h2>
       <label>Koordinaten (z. B. Büro)

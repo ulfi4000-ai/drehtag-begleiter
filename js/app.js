@@ -15,6 +15,7 @@ import { init, wachsen, sucheFuellen, einlesen, vorlagenSicherstellen } from './
 import { initFernbedienung } from './fernbedienung.js';
 import { initNativ, istNativ } from './nativ.js';
 import { toast } from './util.js';
+import { sprachGewuenscht, sprachStarten, sprachStoppen } from './sprachbefehle.js';
 
 const app = document.getElementById('app');
 let letzteRoute = null;
@@ -58,6 +59,8 @@ async function fadenPflege(aktiv) {
   const band = document.getElementById('faden-band');
   const jetzt = band?.querySelector('.faden-punkt.jetzt');
   if (band && jetzt) band.scrollLeft = jetzt.offsetLeft - band.clientWidth / 2 + jetzt.clientWidth / 2;
+  // Sprachbefehle nur im Faden und nur, wenn sie eingeschaltet wurden
+  if (aktiv && sprachGewuenscht() && document.visibilityState === 'visible') sprachStarten(); else sprachStoppen();
   if (aktiv) {
     if (!wachhalter && document.visibilityState === 'visible') {
       try {
@@ -80,6 +83,7 @@ async function fadenPflege(aktiv) {
 // Nach dem Zurückkehren in die App den Bildschirm wieder wach halten
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && location.hash.startsWith('#/faden/')) fadenPflege(true);
+  if (document.visibilityState === 'hidden') sprachStoppen(); // im Hintergrund nie mithören
 });
 
 // Am Drehtag gleich in den Roten Faden, aber nur beim Öffnen der App auf der Startseite.

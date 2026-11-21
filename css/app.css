@@ -620,3 +620,7 @@ button.fab { border: 0; font: inherit; font-weight: 700; font-size: 17px; cursor
 .vorlage-zeile a b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vorlage-zeile .mute { font-size: 13px; }
 .vorlage-zeile .btn { flex: none; min-height: 40px; padding: 0 14px; }
+.mikro-knopf { min-width: 44px; font-size: 18px; }
+.mikro-knopf.an { background: #fff; color: var(--rot); animation: hoert 1.6s ease-in-out infinite; }
+@keyframes hoert { 50% { box-shadow: 0 0 0 4px rgba(255, 255, 255, .45); } }
+@media (prefers-reduced-motion: reduce) { .mikro-knopf.an { animation: none; } }

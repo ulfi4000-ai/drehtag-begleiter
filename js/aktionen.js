@@ -8,6 +8,7 @@ import { copyText, shareText, dateiTeilen, herunterladen, drehtagDatei, exportBa
 import { sucheHtml, zeitplanBlatt, einverstaendnisBlatt } from './ansichten.js';
 import { openUnterschrift } from './unterschrift.js';
 import { wetterVon } from './wetter.js';
+import { sprachUmschalten } from './sprachbefehle.js';
 import { openSketch } from './sketch.js';
 import { openPrompter } from './prompter.js';
 import { sprachnotizAufnehmen } from './aufnahme.js';
@@ -1061,6 +1062,7 @@ const aktionen = {
     render();
   },
   marker: (tagId) => markerSetzen(tagId),
+  sprache() { sprachUmschalten(); render(); },
   'pflicht-auf'(id) { z.pflichtOffen = z.pflichtOffen === id ? '' : id; render(); },
   'faden-nichts'() {},
   async 'frage-ok'(id, el) {
